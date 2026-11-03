@@ -62,3 +62,26 @@
 - Finalize Contribution Table
 - Clean & Document Reproducible Notebook
 - Submit Report & Notebook
+
+## Development setup
+
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
+
+```sh
+uv sync
+```
+
+## Repository layout
+
+- `src/near_duplicates/`: the package; all shared code lives here.
+- `data/`: downloaded images and feature caches; gitignored.
+- `results/`: figures and run summaries; per-query CSVs are gitignored.
+
+## Data licence
+
+DISC21 (Meta, Image Similarity Challenge 2021): <https://ai.meta.com/datasets/disc21-dataset/>.
+Its licence limits use to research on detecting manipulated media and forbids redistributing the dataset.
+Never commit images; the code downloads them from Meta's servers.
+The report may show at most 100 DISC21 images, each with the attribution from Meta's attribution CSV.
+
+Douze et al., "The 2021 Image Similarity Dataset and Challenge", 2021, <https://arxiv.org/abs/2106.09672>.

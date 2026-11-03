@@ -1,0 +1,16 @@
+# DISC21 images may not be redistributed, and caches are large: data never enters git.
+data/
+results/*.csv
+*.npz
+*.npy
+
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

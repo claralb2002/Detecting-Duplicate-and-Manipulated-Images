@@ -1,0 +1,25 @@
+[project]
+name = "near-duplicates"
+version = "0.1.0"
+description = "Near-duplicate image detection at scale: perceptual hashing versus visual-word MinHash LSH"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "opencv-python-headless>=5.0.0.93",
+    "pandas>=3.1.0",
+    "pillow>=13.0.0",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.18.1",
+    "tqdm>=4.70.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.22,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.4.0",
+]
