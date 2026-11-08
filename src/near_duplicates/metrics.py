@@ -12,7 +12,7 @@ import pandas as pd
 
 RESULT_COLUMNS = [
     "system", "mode", "kind", "strength", "query_id", "true_id", "predicted", "score",
-    "candidates", "true_is_candidate", "true_similarity", "lsh_seconds",
+    "candidates", "true_is_candidate", "true_similarity", "seconds",
 ]
 GROUP = ["system", "mode", "kind", "strength"]
 Z_95 = 1.959963984540054
@@ -40,8 +40,35 @@ def threshold_at_fmr(distractor_scores: np.ndarray, fmr: float) -> float:
     return float(scores[len(scores) - allowed - 1])
 
 
+def micro_average_precision(correct: np.ndarray, scores: np.ndarray, positives: int) -> tuple[float, float]:
+    """Micro-average precision and recall at 90% precision, as defined by the DISC21 evaluation code.
+
+    All predictions are pooled and ranked by decreasing score; tied predictions are ranked with incorrect
+    ones first, the worst case, as `facebookresearch/isc2021` does. `positives` counts queries that have a
+    true match, so a positive query without a correct prediction lowers recall.
+    """
+    correct, scores = np.asarray(correct, dtype=bool), np.asarray(scores, dtype=float)
+    order = np.lexsort((correct, -scores))
+    true_positives = np.cumsum(correct[order])
+    precision = true_positives / np.arange(1, len(order) + 1)
+    recall = true_positives / positives
+    average_precision = float((np.diff(recall, prepend=0) * precision).sum())
+    reachable = precision >= 0.9
+    return average_precision, float(recall[reachable].max()) if reachable.any() else 0.0
+
+
 def is_target(results: pd.DataFrame) -> pd.Series:
     return results.true_id != ""
+
+
+def retrieval_scores(results: pd.DataFrame) -> pd.DataFrame:
+    """Micro-average precision and recall at 90% precision per system and mode, over every query in `results`."""
+    def score(group: pd.DataFrame) -> pd.Series:
+        predicted = group[group.predicted != ""]
+        average_precision, recall_at_p90 = micro_average_precision(
+            predicted.predicted == predicted.true_id, predicted.score, int(is_target(group).sum()))
+        return pd.Series({"micro_ap": average_precision, "recall_at_p90": recall_at_p90})
+    return results.groupby(["system", "mode"])[results.columns.tolist()].apply(score).reset_index()
 
 
 def calibrate(results: pd.DataFrame, fmr: float) -> pd.DataFrame:

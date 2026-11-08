@@ -142,12 +142,18 @@ Expected: 8,709 Caltech images. The evaluation teammate should run the validator
 uv run python -m near_duplicates.run caltech101 --split val --queries 20 --kinds jpeg crop   # smoke test
 uv run python -m near_duplicates.run caltech101 --split val    # tune: calibrates and saves the thresholds
 uv run python -m near_duplicates.run caltech101 --split test   # report: reuses the validation thresholds
+uv run python -m near_duplicates.run disc21 --split val --index-size 10000   # one scaling point
+uv run python -m near_duplicates.run disc21 --split dev        # Meta's development queries, micro-average precision
 uv run pytest                                                  # tests
 ```
 
 Both systems are run on the split's targets and distractors under every condition in `transforms.CONDITIONS`, each searched exhaustively and through its LSH index.
+The conditions are single edits at graded strengths, extended until each system fails, and four chains of edits (`transforms.CHAINS`) at levels 1 to 3.
+`--index-size` searches a seeded subset of the index that always holds the targets, for the scaling measurements; the vocabulary always comes from the full index.
+`--split dev` evaluates on DISC21's own development queries: thresholds from `dev_calibration`, scores on `dev_report`, with micro-average precision computed as in Meta's evaluation code, from the top prediction per query.
 Features are cached under `data/cache/` per image list, so a rerun with other LSH or vocabulary settings only repeats the search.
 `--help` lists the parameters: vocabulary size, MinHash permutations, bands and rows for both LSH families, seed and target false-match rate.
+Besides the per-query CSV, each run writes a summary CSV, `costs_<tag>.csv` (index memory, candidates and milliseconds per query) and figures.
 
 Every run writes `results/queries_<tag>.csv` with one row per query, system and mode, in the shared schema of `metrics.RESULT_COLUMNS`:
 
@@ -159,7 +165,7 @@ Every run writes `results/queries_<tag>.csv` with one row per query, system and 
 | `predicted`, `score` | the top result and its score, higher meaning more similar; empty and `-inf` without LSH candidates |
 | `candidates`, `true_is_candidate` | candidates searched (the whole index when exhaustive); whether LSH proposed the true match |
 | `true_similarity` | bit agreement 1 - d/64 for pHash, Jaccard for visual words, between query and true match |
-| `lsh_seconds` | time spent retrieving LSH candidates |
+| `seconds` | search time after feature extraction: scoring the whole index, or retrieving and scoring the LSH candidates |
 
 Any new system or combination (the cascade, spatial verification) that writes this schema can reuse `metrics.summarize` and the plots.
 The summary adds recall@1, recall at the false-match threshold and the false-match rate, each with a 95% Wilson interval.
