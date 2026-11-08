@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from near_duplicates.transforms import CONDITIONS, query_seed, transform
+from near_duplicates.transforms import CHAINS, CONDITIONS, query_seed, transform
 
 
 def rng(seed: int = 0) -> np.random.Generator:
@@ -66,3 +66,12 @@ def test_flip_mirrors_horizontally(image):
 def test_unknown_kind_is_rejected(image):
     with pytest.raises(ValueError):
         transform(image, "sepia", 1, rng())
+
+
+def test_chain_applies_its_steps_in_order_with_one_generator(image):
+    for chain, levels in CHAINS.items():
+        for level, steps in enumerate(levels, start=1):
+            expected, generator = image, rng(7)
+            for step, strength in steps:
+                expected = transform(expected, step, strength, generator)
+            assert np.array_equal(pixels(transform(image, chain, level, rng(7))), pixels(expected)), (chain, level)
