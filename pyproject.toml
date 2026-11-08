@@ -22,5 +22,10 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "imagehash>=4.3.2",
     "ipykernel>=7.4.0",
+    "pytest>=9.2.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

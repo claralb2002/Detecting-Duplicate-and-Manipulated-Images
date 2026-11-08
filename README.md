@@ -108,11 +108,47 @@ Tune only on `val_*` and `dev_calibration`; report only `test_*` and `dev_report
 The splits are committed and seeded; do not regenerate them once results exist.
 Caltech-101 excludes `Faces_easy`, which holds crops of the `Faces` images.
 
+## Running the experiment
+
+```sh
+uv run python -m near_duplicates.run caltech101 --split val --queries 20 --kinds jpeg crop   # smoke test
+uv run python -m near_duplicates.run caltech101 --split val    # tune: calibrates and saves the thresholds
+uv run python -m near_duplicates.run caltech101 --split test   # report: reuses the validation thresholds
+uv run pytest                                                  # tests
+```
+
+Both systems are run on the split's targets and distractors under every condition in `transforms.CONDITIONS`, each searched exhaustively and through its LSH index.
+Features are cached under `data/cache/` per image list, so a rerun with other LSH or vocabulary settings only repeats the search.
+`--help` lists the parameters: vocabulary size, MinHash permutations, bands and rows for both LSH families, seed and target false-match rate.
+
+Every run writes `results/queries_<tag>.csv` with one row per query, system and mode, in the shared schema of `metrics.RESULT_COLUMNS`:
+
+| Column | Meaning |
+| --- | --- |
+| `system`, `mode` | `phash` or `visual-words`; `exhaustive` or `lsh` |
+| `kind`, `strength` | the transformation and its parameter |
+| `query_id`, `true_id` | the source image; the indexed image it should match, empty for distractors |
+| `predicted`, `score` | the top result and its score, higher meaning more similar; empty and `-inf` without LSH candidates |
+| `candidates`, `true_is_candidate` | candidates searched (the whole index when exhaustive); whether LSH proposed the true match |
+| `true_similarity` | bit agreement 1 - d/64 for pHash, Jaccard for visual words, between query and true match |
+| `lsh_seconds` | time spent retrieving LSH candidates |
+
+Any new system or combination (the cascade, spatial verification) that writes this schema can reuse `metrics.summarize` and the plots.
+The summary adds recall@1, recall at the false-match threshold and the false-match rate, each with a 95% Wilson interval.
+
 ## Repository layout
 
 - `src/near_duplicates/`: the package; all shared code lives here.
   - `datasets.py`: data locations, splits and DISC21 ground truth.
   - `download.py`: the download command above.
+  - `transforms.py`: the transformation grid and the seeded transformations.
+  - `features.py`: preprocessing, pHash, SIFT and the feature cache.
+  - `lsh.py`: MinHash, bit sampling, band keys, the banded index and the theoretical s-curves.
+  - `vocabulary.py`: the k-means vocabulary and visual-word sets.
+  - `systems.py`: both systems behind one interface, and the search loop.
+  - `metrics.py`: the results schema, threshold calibration and recall with intervals.
+  - `plots.py`, `run.py`: figures and the experiment command above.
+- `tests/`: pytest suite; tests that need Caltech-101 skip when it is not downloaded.
 - `splits/`: the fixed splits, one image ID per line.
 - `data/`: downloaded images and feature caches; gitignored.
 - `results/`: figures and run summaries; per-query CSVs are gitignored.

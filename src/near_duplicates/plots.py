@@ -1,0 +1,69 @@
+"""Figures from the shared results: recall against transformation strength, and LSH s-curves against measurement."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from near_duplicates.lsh import CODE_BITS, bit_sampling_curve, s_curve
+
+STYLES = {
+    ("phash", "lsh"): ("C0", "-"), ("phash", "exhaustive"): ("C0", "--"),
+    ("visual-words", "lsh"): ("C1", "-"), ("visual-words", "exhaustive"): ("C1", "--"),
+}
+UNGRADED = ("clean", "flip")
+
+
+def plot_recall(summary: pd.DataFrame, path: Path) -> None:
+    kinds = [k for k in dict.fromkeys(summary.kind) if k not in UNGRADED]
+    columns = 3
+    fig, axes = plt.subplots(-(-(len(kinds) + 1) // columns), columns, figsize=(13, 3.4 * -(-(len(kinds) + 1) // columns)), squeeze=False)
+    for ax, kind in zip(axes.flat, kinds):
+        for (system, mode), (color, line) in STYLES.items():
+            part = summary[(summary.kind == kind) & (summary.system == system) & (summary["mode"] == mode)].sort_values("strength")
+            x = part.strength.astype(float)
+            ax.plot(x, part.recall_at_1, color=color, linestyle=line, marker="o", markersize=3, label=f"{system} {mode}")
+            ax.fill_between(x, part.recall_at_1_low, part.recall_at_1_high, color=color, alpha=0.12, linewidth=0)
+        ax.set(title=kind, ylim=(0, 1.02), xlabel="strength", ylabel="recall@1")
+    axes.flat[0].legend(fontsize=7)
+    table_ax = axes.flat[len(kinds)]
+    table_ax.axis("off")
+    ungraded = summary[summary.kind.isin(UNGRADED)].pivot_table(index="kind", columns=["system", "mode"], values="recall_at_1")
+    if not ungraded.empty:
+        table_ax.table(cellText=ungraded.round(2).values, rowLabels=ungraded.index,
+                       colLabels=[f"{s}\n{m}" for s, m in ungraded.columns], loc="center")
+    for ax in axes.flat[len(kinds) + 1 :]:
+        ax.axis("off")
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+
+
+def plot_s_curves(results: pd.DataFrame, bit_bands: int, bit_rows: int, minhash_bands: int, minhash_rows: int, path: Path) -> None:
+    """Observed P(true match is a candidate) per similarity bin against the theoretical candidate probability."""
+    lsh_targets = results[(results["mode"] == "lsh") & (results.true_id != "")]
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+    grid = np.linspace(0, 1, 201)
+    distances = np.arange(CODE_BITS + 1)
+    axes[0].plot(1 - distances / CODE_BITS, bit_sampling_curve(distances, bit_bands, bit_rows), "k-",
+                 label=f"exact, b={bit_bands}, r={bit_rows}")
+    axes[0].plot(grid, s_curve(grid, bit_bands, bit_rows), "k:", label="(1 - d/64)^r approximation")
+    axes[1].plot(grid, s_curve(grid, minhash_bands, minhash_rows), "k-", label=f"theory, b={minhash_bands}, r={minhash_rows}")
+    for ax, system, label in ((axes[0], "phash", "bit agreement 1 - d/64"), (axes[1], "visual-words", "Jaccard similarity")):
+        part = lsh_targets[lsh_targets.system == system]
+        bins = np.linspace(0, 1, 21)
+        grouped = part.groupby(pd.cut(part.true_similarity, bins), observed=True).true_is_candidate.agg(["mean", "size"])
+        centers = np.array([interval.mid for interval in grouped.index])
+        ax.scatter(centers, grouped["mean"], s=5 + 40 * grouped["size"] / max(grouped["size"].max(), 1), color="C3",
+                   label="observed (size = count)", zorder=3)
+        ax.set(title=system, xlabel=label, ylabel="P(true match is a candidate)", ylim=(-0.02, 1.02))
+        ax.legend(fontsize=7)
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
