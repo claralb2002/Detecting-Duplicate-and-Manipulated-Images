@@ -37,6 +37,9 @@ class FeatureSet:
     hashes: np.ndarray
     descriptors: list[np.ndarray]
 
+    def subset(self, positions: np.ndarray) -> FeatureSet:
+        return FeatureSet([self.ids[i] for i in positions], self.hashes[positions], [self.descriptors[i] for i in positions])
+
 
 def load_image(path: Path) -> Image.Image:
     img = Image.open(path).convert("RGB")
