@@ -73,22 +73,43 @@ class BitSampler:
         return (bits * weights).sum(axis=2, dtype=np.uint64)
 
 
+BAND_MIXER = np.uint64(0x9E3779B97F4A7C15)
+
+
+def band_tagged(keys: np.ndarray) -> np.ndarray:
+    """Fold the band number into each key, so all bands share one sorted table and one lookup.
+
+    Equal (band, key) pairs always give equal tagged keys, so no true candidate is lost; a rare
+    collision between different pairs only adds a spurious candidate, which verification rejects.
+    """
+    with np.errstate(over="ignore"):
+        return keys.astype(np.uint64) * BAND_MIXER + np.arange(keys.shape[-1], dtype=np.uint64)
+
+
 class BandIndex:
-    """One sorted key table per band; a query returns every item sharing at least one band key."""
+    """All band keys in one sorted table; a query returns every item sharing at least one band key."""
 
     def __init__(self, keys: np.ndarray):
-        self.order = np.argsort(keys, axis=0, kind="stable")
-        self.sorted_keys = np.take_along_axis(keys, self.order, axis=0)
+        n, self.bands = keys.shape
+        tagged = band_tagged(keys).ravel()
+        order = np.argsort(tagged, kind="stable")
+        self.sorted_keys = tagged[order]
+        self.items = (order // self.bands).astype(np.int32 if n < 2**31 else np.int64)
 
     def candidates(self, query_keys: np.ndarray) -> np.ndarray:
         """Sorted candidate item positions for one query, given its keys of shape (bands,)."""
-        found = []
-        for band, key in enumerate(query_keys):
-            column = self.sorted_keys[:, band]
-            start, stop = np.searchsorted(column, key, side="left"), np.searchsorted(column, key, side="right")
-            if stop > start:
-                found.append(self.order[start:stop, band])
-        return np.unique(np.concatenate(found)) if found else np.empty(0, dtype=np.int64)
+        tagged = band_tagged(np.asarray(query_keys)[None])[0]
+        starts = np.searchsorted(self.sorted_keys, tagged, side="left")
+        counts = np.searchsorted(self.sorted_keys, tagged, side="right") - starts
+        total = int(counts.sum())
+        if total == 0:
+            return np.empty(0, dtype=np.int64)
+        offsets = np.cumsum(counts) - counts
+        return np.unique(self.items[np.arange(total) + np.repeat(starts - offsets, counts)]).astype(np.int64)
+
+    @property
+    def nbytes(self) -> int:
+        return self.sorted_keys.nbytes + self.items.nbytes
 
 
 def hamming(codes: np.ndarray, code: int | np.uint64) -> np.ndarray:
