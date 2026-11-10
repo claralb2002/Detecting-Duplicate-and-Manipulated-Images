@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -47,16 +48,58 @@ def image_path(dataset: str, image_id: str) -> Path:
 
 
 def load_split(dataset: str, name: str) -> list[str]:
+    if dataset not in DATASETS or name not in SPLIT_NAMES[dataset]:
+        raise ValueError(f"unknown dataset/split: {dataset}/{name}")
     path = SPLITS_DIR / dataset / f"{name}.txt"
     if not path.exists():
         raise FileNotFoundError(f"{path} is missing; run `uv run python -m near_duplicates.download {dataset}`")
     return path.read_text().split()
 
 
+SPLIT_NAMES = {
+    "caltech101": ("index", "val_targets", "test_targets", "val_distractors", "test_distractors"),
+    "disc21": ("index", "val_targets", "test_targets", "val_distractors", "test_distractors",
+               "dev_calibration", "dev_report"),
+}
+
+
+def fit_image_ids(dataset: str) -> list[str]:
+    """Vocabulary-fitting pool: catalogue images excluding evaluation sources.
+
+    DISC21 also excludes sources of all positive development queries. This uses
+    ground truth only to reserve sources, never to fit or tune representations.
+    Returned IDs are sorted; no committed split is rewritten.
+    """
+    excluded = set(load_split(dataset, "val_targets")) | set(load_split(dataset, "test_targets"))
+    if dataset == "disc21":
+        excluded.update(dev_ground_truth().values())
+    return sorted(set(load_split(dataset, "index")) - excluded)
+
+
 def dev_ground_truth() -> dict[str, str]:
     """DISC21 development query ID -> the reference ID it was made from (positive queries only)."""
-    with open(DISC21_DIR / "dev_ground_truth.csv", newline="") as handle:
-        return {row[0]: row[1] for row in csv.reader(handle) if len(row) == 2 and row[1]}
+    truth = {}
+    seen = set()
+    with open(DISC21_DIR / "dev_ground_truth.csv", newline="", encoding="utf-8-sig") as handle:
+        for line, row in enumerate(csv.reader(handle), start=1):
+            if not row:
+                continue
+            if len(row) != 2:
+                raise ValueError(f"development ground truth line {line}: expected two columns")
+            query, reference = (value.strip() for value in row)
+            if line == 1 and (query, reference) == ("query_id", "reference_id"):
+                continue
+            if not re.fullmatch(r"Q[0-9]{5}", query) or int(query[1:]) >= DISC21_QUERY_COUNT:
+                raise ValueError(f"development ground truth line {line}: invalid query ID {query!r}")
+            if reference and (not re.fullmatch(r"R[0-9]{6}", reference)
+                              or int(reference[1:]) >= DISC21_REFERENCE_COUNT):
+                raise ValueError(f"development ground truth line {line}: invalid reference ID {reference!r}")
+            if query in seen:
+                raise ValueError(f"duplicate development ground-truth query: {query}")
+            seen.add(query)
+            if reference:
+                truth[query] = reference
+    return truth
 
 
 def caltech_image_ids() -> list[str]:
