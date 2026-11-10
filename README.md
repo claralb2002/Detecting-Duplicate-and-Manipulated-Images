@@ -2,73 +2,74 @@
 
 ## Setup & Data
 
-- Project Setup & Dependencies
-- Download DISC21 Dataset
-- Image Preprocessing
-- Feature Caching & Data Loading
-- Train, Validation & Test Splits
+- [x] Project Setup & Dependencies
+- [x] Download Caltech101 (everyone needs their own copy)
+- [ ] Download DISC21 Dataset (only one person do this)
+- [x] Image Preprocessing
+- [x] Feature Caching & Data Loading
+- [x] Train, Validation & Test Splits
 
 ## System A – Perceptual Hashing
-- Implement pHash (DCT-Based)
-- Validate pHash Implementation
-- Implement Bit-Sampling LSH
-- Tune LSH Parameters (b, r)
-- Hamming Distance & Candidate Verification
+- [ ] Implement pHash (DCT-Based)
+- [ ] Validate pHash Implementation
+- [ ] Implement Bit-Sampling LSH
+- [ ] Tune LSH Parameters (b, r)
+- [ ] Hamming Distance & Candidate Verification
 
 ## System B – Local Features & MinHash
-- Extract SIFT Features
-- Build Visual Vocabulary with K-Means
-- Convert Images to Visual-Word Sets
-- Implement MinHash Signatures
-- Implement MinHash LSH Banding
-- Tune Vocabulary Size & LSH Parameters
-- Jaccard Similarity & Containment
-- Spatial Verification with RANSAC
+- [ ] Extract SIFT Features
+- [ ] Build Visual Vocabulary with K-Means
+- [ ] Convert Images to Visual-Word Sets
+- [ ] Implement MinHash Signatures
+- [ ] Implement MinHash LSH Banding
+- [ ] Tune Vocabulary Size & LSH Parameters
+- [ ] Jaccard Similarity & Containment
+- [ ] Spatial Verification with RANSAC
 
 
 ## Testing & Evaluation
-- Generate Transformed Image Queries
-- Generate Distractor Queries
-- Implement Exhaustive Search Baselines
-- Evaluate Recall@1 & Precision
-- Compare LSH vs. Exhaustive Search
-- Evaluate LSH S-Curves
-- Analyze Failure Cases
+- [ ] Generate Transformed Image Queries
+- [ ] Generate Distractor Queries
+- [ ] Implement Exhaustive Search Baselines
+- [ ] Evaluate Recall@1 & Precision
+- [ ] Compare LSH vs. Exhaustive Search
+- [ ] Evaluate LSH S-Curves
+- [ ] Analyze Failure Cases
 
 ## Scalability & Clustering
-- Benchmark Query Time & Memory
-- Test Scalability (10K, 50K, 100K–200K Images)
-- Detect Near-Duplicate Pairs with LSH Self-Join
-- Build Image Similarity Graph
-- Compare Louvain vs. Connected Components
-- Evaluate Clustering Quality (ARI & Modularity)
+- [ ] Benchmark Query Time & Memory
+- [ ] Test Scalability (10K, 50K, 100K–200K Images)
+- [ ] Detect Near-Duplicate Pairs with LSH Self-Join
+- [ ] Build Image Similarity Graph
+- [ ] Compare Louvain vs. Connected Components
+- [ ] Evaluate Clustering Quality (ARI & Modularity)
 
 ## Final Experiments & Results
-- Compare pHash vs. Visual Words
-- Analyze Performance by Transformation Strength
-- Run DISC21 Development Evaluation
-- Perform Parameter Ablation Studies
-- Generate Final Figures & Tables
-- Summarize Findings & Limitations
+- [ ] Compare pHash vs. Visual Words
+- [ ] Analyze Performance by Transformation Strength
+- [ ] Run DISC21 Development Evaluation
+- [ ] Perform Parameter Ablation Studies
+- [ ] Generate Final Figures & Tables
+- [ ] Summarize Findings & Limitations
 
 
 ## Report & Submission
-- Write Introduction & Research Questions
-- Describe Dataset & Preprocessing
-- Explain Methods & Algorithms
-- Present Experimental Results
-- Discuss Failures & Trade-offs
-- Write Conclusion
-- Finalize Contribution Table
-- Clean & Document Reproducible Notebook
-- Submit Report & Notebook
+- [ ] Write Introduction & Research Questions
+- [ ] Describe Dataset & Preprocessing
+- [ ] Explain Methods & Algorithms
+- [ ] Present Experimental Results
+- [ ] Discuss Failures & Trade-offs
+- [ ] Write Conclusion
+- [ ] Finalize Contribution Table
+- [ ] Clean & Document Reproducible Notebook
+- [ ] Submit Report & Notebook
 
 ## Development setup
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
 
 ```sh
-uv sync
+uv sync --locked
 ```
 
 ## Data
@@ -108,12 +109,31 @@ Tune only on `val_*` and `dev_calibration`; report only `test_*` and `dev_report
 The splits are committed and seeded; do not regenerate them once results exist.
 Caltech-101 excludes `Faces_easy`, which holds crops of the `Faces` images.
 
+### Preprocessing, fitting and caching
+
+- `preprocessing.py`: grayscale `uint8` images; 32 × 32 for pHash, maximum side 1,024 for SIFT (aspect ratio preserved). Use `iter_batches()` for loading.
+- `fit_image_ids(dataset)`: vocabulary-fitting images excluding validation/test sources; 3,709 images for Caltech-101. Use seed 2807 for sampling and fitting.
+- `FeatureCache`: saves numeric feature arrays under `data/cache/`. Include extractor settings/version and vocabulary identity in cache parameters. Feature extraction follows in Systems A/B.
+
+Verify local data and run tests:
+
+```sh
+uv run python -m near_duplicates.validate caltech101
+uv run python -m unittest discover -s tests -v
+```
+
+Expected: 8,709 Caltech images. The evaluation teammate should run the validator with `disc21` after downloading it; DISC21 remains unverified locally.
+
 ## Repository layout
 
 - `src/near_duplicates/`: the package; all shared code lives here.
   - `datasets.py`: data locations, splits and DISC21 ground truth.
   - `download.py`: the download command above.
+  - `preprocessing.py`: preprocessing presets and streaming image/batch loading.
+  - `cache.py`: per-image feature caches with metadata and source-content invalidation.
+  - `validate.py`: read-only split, image and DISC21 ground-truth audit.
 - `splits/`: the fixed splits, one image ID per line.
+- `tests/`: synthetic setup/data checks; no dataset download needed.
 - `data/`: downloaded images and feature caches; gitignored.
 - `results/`: figures and run summaries; per-query CSVs are gitignored.
 
