@@ -41,16 +41,21 @@ def load_image(path: str | Path, config: PreprocessConfig = SIFT_PREPROCESS) -> 
     """Decode an image or raise an error naming its path; never silently skip it."""
     try:
         with Image.open(path) as source:
-            image = ImageOps.exif_transpose(source).convert("RGBA")
-            background = Image.new("RGBA", image.size, "white")
-            image = Image.alpha_composite(background, image).convert(config.mode)
-            if config.square_size is not None:
-                image = image.resize((config.square_size, config.square_size), Image.Resampling.LANCZOS)
-            elif config.max_side is not None:
-                image.thumbnail((config.max_side, config.max_side), Image.Resampling.LANCZOS)
-            return np.array(image, dtype=np.uint8)
+            return preprocess_image(source, config)
     except (OSError, ValueError) as exc:
         raise ValueError(f"Cannot decode/preprocess {path}: {exc}") from exc
+
+
+def preprocess_image(image: Image.Image, config: PreprocessConfig = SIFT_PREPROCESS) -> np.ndarray:
+    """Apply the same pipeline to an in-memory transformed query as to a file."""
+    image = ImageOps.exif_transpose(image).convert("RGBA")
+    background = Image.new("RGBA", image.size, "white")
+    image = Image.alpha_composite(background, image).convert(config.mode)
+    if config.square_size is not None:
+        image = image.resize((config.square_size, config.square_size), Image.Resampling.LANCZOS)
+    elif config.max_side is not None:
+        image.thumbnail((config.max_side, config.max_side), Image.Resampling.LANCZOS)
+    return np.array(image, dtype=np.uint8)
 
 
 def iter_images(
