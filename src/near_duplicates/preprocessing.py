@@ -34,7 +34,7 @@ class PreprocessConfig:
 
 
 PHASH_PREPROCESS = PreprocessConfig(square_size=32)
-SIFT_PREPROCESS = PreprocessConfig(max_side=1024)
+SIFT_PREPROCESS = PreprocessConfig(mode="RGB", max_side=512)
 
 
 def load_image(path: str | Path, config: PreprocessConfig = SIFT_PREPROCESS) -> np.ndarray:
