@@ -16,8 +16,6 @@
 - [x] Tune LSH Parameters (b, r)
 - [x] Hamming Distance & Candidate Verification
 
-Implementation, course connections, calibration protocol and usage:
-[System A notes](docs/system_a.md).
 
 ```sh
 PYTHONPATH=src uv run python -m near_duplicates.system_a caltech101 --output results/system_a_caltech101.json
