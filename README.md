@@ -125,7 +125,8 @@ uv run python -m near_duplicates.validate caltech101
 uv run pytest
 ```
 
-Expected: 8,709 Caltech images. The evaluation teammate should run the validator with `disc21` after downloading it; DISC21 remains unverified locally.
+Expected: 8,709 Caltech images.
+`validate disc21` decodes all 122,500 DISC21 images of the splits (the scale split included, when downloaded) and checks that both development halves hold 5,000 matched and 5,000 unmatched queries; it passed on 2026-11-11.
 
 ## Running the experiment
 
