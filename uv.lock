@@ -790,6 +790,7 @@ dependencies = [
     { name = "requests" },
     { name = "scikit-learn" },
     { name = "scipy" },
+    { name = "threadpoolctl" },
     { name = "tqdm" },
 ]
 
@@ -808,6 +809,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.34.2" },
     { name = "scikit-learn", specifier = ">=1.9.1" },
     { name = "scipy", specifier = ">=1.18.1" },
+    { name = "threadpoolctl", specifier = ">=3.7.0" },
     { name = "tqdm", specifier = ">=4.70.1" },
 ]
 
