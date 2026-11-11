@@ -277,7 +277,8 @@ Deduplication: `dedup disc21 --index-size 10000 --groups 1000 --copies 3` with t
 
 RANSAC-verified edges answer the seat-5 question: they are clean enough (pair precision 0.997) that connected components suffice, and Louvain changes nothing.
 On unverified visual-word graphs Louvain at resolution 100 is what keeps loose thresholds usable (0.708 against 0.008 at J >= 0.1), so its value remains robustness to the edge threshold.
-The unverified union graph peaks at 0.777, below visual words alone, because the sweep joins each Jaccard threshold with a pHash distance of 10 to 14 bits, where pHash's own edges are already noisy (pair precision 0.83 at d <= 12, 0.40 at d <= 14); a union with d <= 8 was not swept unverified.
+The unverified union graph peaks at 0.777, below visual words alone, because the sweep joins the loose Jaccard thresholds where visual words peak with pHash distances of 12 to 14 bits, where pHash's own edges are already noisy (pair precision 0.83 at d <= 12, 0.40 at d <= 14).
+At a fixed Jaccard threshold a strict pHash distance does help: 0.594 for J >= 0.3 alone, 0.696 joined with d <= 8.
 Pair recall stays at most 0.83, since flips and level-3 chains reach no threshold.
 These thresholds and resolutions are chosen on this catalogue; `dedup --seed 1` plants a new catalogue on which the chosen settings are to be reported.
 
