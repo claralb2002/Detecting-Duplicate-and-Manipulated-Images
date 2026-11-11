@@ -10,11 +10,25 @@
 - [x] Train, Validation & Test Splits
 
 ## System A – Perceptual Hashing
-- [ ] Implement pHash (DCT-Based)
-- [ ] Validate pHash Implementation
-- [ ] Implement Bit-Sampling LSH
-- [ ] Tune LSH Parameters (b, r)
-- [ ] Hamming Distance & Candidate Verification
+- [x] Implement pHash (DCT-Based)
+- [x] Validate pHash Implementation
+- [x] Implement Bit-Sampling LSH
+- [x] Tune LSH Parameters (b, r)
+- [x] Hamming Distance & Candidate Verification
+
+Implementation, course connections, calibration protocol and usage:
+[System A notes](docs/system_a.md).
+
+```sh
+PYTHONPATH=src uv run python -m near_duplicates.system_a caltech101 --output results/system_a_caltech101.json
+```
+
+This tunes `(b, r)` and the Hamming threshold on the fixed validation splits;
+test and DISC21 report queries remain reserved. The full Caltech calibration selected
+`b=32`, `r=8`, Hamming threshold `10`: validation Recall@1 **79.44%**, precision
+**87.26%** across 5,000 transformed target/distractor queries. See the
+[run summary](results/system_a_caltech101.json) and method notes for tradeoffs
+and crop/rotation limitations.
 
 ## System B – Local Features & MinHash
 - [ ] Extract SIFT Features
@@ -132,8 +146,12 @@ Expected: 8,709 Caltech images. The evaluation teammate should run the validator
   - `preprocessing.py`: preprocessing presets and streaming image/batch loading.
   - `cache.py`: per-image feature caches with metadata and source-content invalidation.
   - `validate.py`: read-only split, image and DISC21 ground-truth audit.
+  - `phash.py`: cached 64-bit DCT pHashes and exact Hamming distances.
+  - `lsh.py`: seeded bit-sampling tables and full-hash candidate verification.
+  - `system_a.py`: validation query probes, parameter sweep and calibration command.
 - `splits/`: the fixed splits, one image ID per line.
-- `tests/`: synthetic setup/data checks; no dataset download needed.
+- `tests/`: synthetic setup/data and System A checks; no dataset download needed.
+- `docs/system_a.md`: method, theory, validation and usage for System A.
 - `data/`: downloaded images and feature caches; gitignored.
 - `results/`: figures and run summaries; per-query CSVs are gitignored.
 
