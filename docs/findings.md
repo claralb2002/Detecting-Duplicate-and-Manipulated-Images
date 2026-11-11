@@ -212,6 +212,39 @@ Combinations, held-out half, mean recall at the common false-match rate with 95%
 The cascade stays within 0.006 of the best possible combination and beats fusion, as in finding 5.
 The held-out false-match rate of the exhaustive RANSAC cascade is 1.44%, with the source-bootstrap interval [0.45%, 2.63%], so it again sits within the noise of 250 distractor sources.
 
+## 14. Test split: validation carries over
+
+`run disc21 --split test` with the frozen flags: 2,000 targets and 2,000 distractors under 52 conditions, 208,000 queries, thresholds from validation unchanged.
+
+| System | Exhaustive | LSH | False-match rate, exhaustive / LSH |
+| --- | --- | --- | --- |
+| pHash | 0.482 [0.480, 0.484] | 0.510 [0.508, 0.512] | 0.15% / 0.61% |
+| Visual words | 0.610 [0.606, 0.613] | 0.609 [0.606, 0.612] | 1.24% / 1.24% |
+| Visual words + RANSAC | 0.832 [0.828, 0.836] | 0.790 [0.786, 0.794] | 0.40% / 0.58% |
+| Visual words, containment | 0.203 [0.202, 0.205] | 0.413 [0.410, 0.417] | 0.91% / 1.32% |
+
+Every recall is within 0.006 of validation (finding 13), so the frozen settings did not overfit validation.
+The thresholds transfer less evenly: visual words overshoot the 1% target (1.24% [0.93%, 1.59%]), while RANSAC's inlier threshold, set on 250 validation distractor sources, is conservative on test (0.40%).
+The s-curve again predicts LSH recall@1: pHash 0.546 measured against 0.542 predicted, visual words 0.784 against 0.779, and candidate rates within 0.002.
+
+Combinations, calibrated on half of the test source images and evaluated on the other half:
+
+| B system | Retrieval | pHash | B alone | Cascade | Fusion | Either | Settled by pHash |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Visual words | LSH | 0.509 | 0.598 | 0.739 [0.736, 0.742] | 0.734 | 0.753 | 24% |
+| Visual words + RANSAC | exhaustive | 0.521 | 0.868 | 0.919 [0.915, 0.922] | 0.912 | 0.925 | 22% |
+| Visual words + RANSAC | LSH | 0.509 | 0.793 | 0.876 [0.872, 0.879] | 0.872 | 0.880 | 24% |
+
+With RANSAC the cascade stays within 0.006 of the best possible combination, with visual words alone within 0.014; the held-out false-match rate of the RANSAC cascade is 0.53% exhaustive and 0.56% with LSH.
+Unlike the single systems, the combinations are calibrated within the test split; the halves share no source image.
+
+Failure table (`failures`, medians over targets), where each representation breaks:
+
+- pHash: recall@1 falls below 0.5 as the median Hamming distance of the true pair grows from 12 to 18 bits; at 18 bits (crop to 75%, rotation by 5 degrees, overlay of half the image) it is about 0.2, and flips sit at 32 bits, the distance of unrelated images.
+- Visual words: when blur, downscaling or contrast loss remove keypoints (blur sigma 8 leaves 69 of 300, downscale to 10% 64, contrast loss of 90% none), or when an edit changes the descriptors themselves: doubled brightness keeps all 300 keypoints, but the true pair's median Jaccard falls to 0.055 and recall@1 to 0.29.
+- RANSAC: flips keep a median of 18 ratio-test matches and 11 inliers, against 235 and 234 for an unedited query; flip+JPEG at level 3 keeps 6 inliers.
+- The gallery of 69 sampled misses is written locally under `data/failures/` and never committed.
+
 ## Open for the seats
 
 - Seat 1: pHash (b, r) beyond one tuned point, and the scale point at 100,000 references to see whether the LSH advantage over the scan grows.
