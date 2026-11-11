@@ -18,15 +18,14 @@
 
 
 ## System B – Local Features & MinHash
-- [ ] Extract SIFT Features
-- [ ] Build Visual Vocabulary with K-Means
-- [ ] Convert Images to Visual-Word Sets
-- [ ] Implement MinHash Signatures
-- [ ] Implement MinHash LSH Banding
-- [ ] Tune Vocabulary Size & LSH Parameters
-- [ ] Jaccard Similarity & Containment
-- [ ] Spatial Verification with RANSAC
-
+- [x] Extract SIFT Features
+- [x] Build Visual Vocabulary with K-Means
+- [x] Convert Images to Visual-Word Sets
+- [x] Implement MinHash Signatures
+- [x] Implement MinHash LSH Banding
+- [x] Tune Vocabulary Size & LSH Parameters
+- [x] Jaccard Similarity & Containment
+- [x] Spatial Verification with RANSAC
 
 ## Testing & Evaluation
 - [ ] Generate Transformed Image Queries
