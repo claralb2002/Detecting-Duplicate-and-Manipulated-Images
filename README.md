@@ -17,17 +17,6 @@
 - [x] Hamming Distance & Candidate Verification
 
 
-```sh
-PYTHONPATH=src uv run python -m near_duplicates.system_a caltech101 --output results/system_a_caltech101.json
-```
-
-This tunes `(b, r)` and the Hamming threshold on the fixed validation splits;
-test and DISC21 report queries remain reserved. The full Caltech calibration selected
-`b=32`, `r=8`, Hamming threshold `10`: validation Recall@1 **79.44%**, precision
-**87.26%** across 5,000 transformed target/distractor queries. See the
-[run summary](results/system_a_caltech101.json) and method notes for tradeoffs
-and crop/rotation limitations.
-
 ## System B – Local Features & MinHash
 - [ ] Extract SIFT Features
 - [ ] Build Visual Vocabulary with K-Means
@@ -125,15 +114,16 @@ Caltech-101 excludes `Faces_easy`, which holds crops of the `Faces` images.
 
 ### Preprocessing, fitting and caching
 
-- `preprocessing.py`: grayscale `uint8` images; 32 × 32 for pHash, maximum side 1,024 for SIFT (aspect ratio preserved). Use `iter_batches()` for loading.
-- `fit_image_ids(dataset)`: vocabulary-fitting images excluding validation/test sources; 3,709 images for Caltech-101. Use seed 2807 for sampling and fitting.
-- `FeatureCache`: saves numeric feature arrays under `data/cache/`. Include extractor settings/version and vocabulary identity in cache parameters. Feature extraction follows in Systems A/B.
+- `preprocessing.py`: decoding with EXIF orientation and transparency handled; 32 x 32 grayscale for pHash, RGB with a longer side of at most 512 for SIFT.
+- `local_features.extract_local_features`: pHash of the image as given and the 300 strongest SIFT keypoints of its 512-pixel copy; edits are applied to the full-resolution image first (`features.py`).
+- `fit_image_ids(dataset)`: vocabulary-fitting images excluding validation/test sources and DISC21 development sources; 3,709 images for Caltech-101, 38,013 for DISC21.
+- Feature caches and vocabularies live under `data/cache/<dataset>-<settings hash>/`, one `.npz` per image list, so caches made with other extractor settings are never mixed up or overwritten.
 
 Verify local data and run tests:
 
 ```sh
 uv run python -m near_duplicates.validate caltech101
-uv run python -m unittest discover -s tests -v
+uv run pytest
 ```
 
 Expected: 8,709 Caltech images. The evaluation teammate should run the validator with `disc21` after downloading it; DISC21 remains unverified locally.
@@ -194,17 +184,18 @@ Rates pooled over conditions (`overall_<tag>.csv`, and the combinations) carry 9
 - `src/near_duplicates/`: the package; all shared code lives here.
   - `datasets.py`: data locations, splits and DISC21 ground truth.
   - `download.py`: the download command above.
-  - `preprocessing.py`: preprocessing presets and streaming image/batch loading.
-  - `cache.py`: per-image feature caches with metadata and source-content invalidation.
+  - `preprocessing.py`: preprocessing presets shared by catalogue images and queries.
   - `validate.py`: read-only split, image and DISC21 ground-truth audit.
-  - `phash.py`: cached 64-bit DCT pHashes and exact Hamming distances.
-  - `system_a.py`: validation query probes, parameter sweep and calibration command.
+  - `phash.py`: the 64-bit DCT pHash and exact Hamming distances.
+  - `local_features.py`: joint pHash and SIFT extraction from one decoded image.
   - `transforms.py`: the transformation grid and the seeded transformations.
-  - `features.py`: preprocessing, pHash, SIFT keypoints and descriptors, and the feature cache.
-  - `lsh.py`: MinHash, bit sampling, band keys, the banded index and the theoretical s-curves; System A's seeded bit-sampling tables with full-hash candidate verification.
-  - `vocabulary.py`: the k-means vocabulary and visual-word sets.
+  - `features.py`: edits at full resolution, extraction in parallel, and the per-list feature caches.
+  - `visual_words.py`: k-means vocabularies, word assignment and the Davies-Bouldin diagnostic.
+  - `vocabulary.py`: the cached vocabulary fitted on the fitting pool, and visual-word sets.
+  - `minhash.py`: MinHash signatures from exact random permutations.
+  - `lsh.py`: bit sampling, band keys, the banded index for both LSH families and their s-curves.
+  - `spatial.py`: ratio-test matching and RANSAC homography verification.
   - `systems.py`: the systems behind one interface, and the search loop.
-  - `verification.py`: descriptor matching and RANSAC inlier counts.
   - `metrics.py`: the results schema, threshold calibration and recall with intervals.
   - `cascade.py`: the cascade, score fusion and the best possible combination.
   - `dedup.py`: planted copies, the LSH self-join, verified edges and graph clustering.
@@ -212,8 +203,8 @@ Rates pooled over conditions (`overall_<tag>.csv`, and the combinations) carry 9
   - `failures.py`: failure mechanisms and the gallery of misses.
   - `plots.py`, `run.py`, `analyze.py`: figures and the commands above.
 - `splits/`: the fixed splits, one image ID per line.
-- `tests/`: pytest suite, including the synthetic setup/data and System A checks; tests that need Caltech-101 skip when it is not downloaded.
-- `docs/system_a.md`: method, theory, validation and usage for System A.
+- `tests/`: pytest suite; tests that need Caltech-101 skip when it is not downloaded.
+- `docs/findings.md`: reference findings on validation data, and what each seat inherits from them.
 - `data/`: downloaded images and feature caches; gitignored.
 - `results/`: figures and run summaries; per-query CSVs are gitignored.
 
