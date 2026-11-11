@@ -24,14 +24,13 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass
-from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from near_duplicates.datasets import load_split
-from near_duplicates.features import cache_dir, cached_features, init_worker, load_features
+from near_duplicates.features import cache_dir, cached_features, load_features, worker_pool
 from near_duplicates.lsh import bit_sampling_curve, s_curve
 from near_duplicates.metrics import is_target, threshold_at_fmr
 from near_duplicates.phash import HASH_BITS
@@ -163,7 +162,7 @@ def main() -> None:
     targets, distractors = load_split(dataset, "val_targets"), load_split(dataset, "val_distractors")
     positions = index_subset(full_index, set(targets), run["index_size"], seed)
     cache = cache_dir(dataset)
-    with Pool(args.workers, initializer=init_worker) as pool:
+    with worker_pool(args.workers) as pool:
         full = cached_features(cache / f"index_n{len(full_index)}.npz", [(dataset, i, "clean", 0) for i in full_index], pool, "index")
         vocabularies = {k: fitted_vocabulary(dataset, full.ids, full.descriptors, k, seed) for k in args.vocabulary}
     index = full.subset(positions)

@@ -20,7 +20,6 @@ import argparse
 import os
 import sys
 import time
-from multiprocessing import Pool
 
 import networkx as nx
 import numpy as np
@@ -30,7 +29,7 @@ from scipy.sparse.csgraph import connected_components
 from sklearn.metrics import adjusted_rand_score
 
 from near_duplicates.datasets import REPO_ROOT, load_split
-from near_duplicates.features import cache_dir, Job, cached_features, init_worker
+from near_duplicates.features import cache_dir, Job, cached_features, worker_pool
 from near_duplicates.run import index_subset
 from near_duplicates.systems import PhashSystem, VisualWordSystem
 from near_duplicates.spatial import pair_inliers
@@ -146,7 +145,7 @@ def main() -> None:
     index_ids = [full_index[i] for i in positions]
     jobs, labels = plant(index_ids, args.groups, args.copies, args.dataset, args.seed)
     cache = cache_dir(args.dataset)
-    with Pool(args.workers, initializer=init_worker) as pool:
+    with worker_pool(args.workers) as pool:
         full = cached_features(cache / f"index_n{len(full_index)}.npz",
                                [(args.dataset, i, "clean", 0) for i in full_index], pool, "index")
         vocabulary = fitted_vocabulary(args.dataset, full.ids, full.descriptors, args.vocabulary, args.seed)

@@ -87,6 +87,25 @@ def init_worker() -> None:
     cv2.setNumThreads(1)
 
 
+def worker_pool(workers: int) -> Pool:
+    """A process pool for `extract_job` whose workers start with one BLAS thread.
+
+    Each spawned worker imports NumPy, whose OpenBLAS reserves buffers for every core at import: about 0.7 GB
+    of commit charge per process, which 30 idle workers turn into tens of gigabytes and an out-of-memory error
+    in the parent. Workers run only SIFT and pHash, so one BLAS thread costs them nothing; the parent keeps
+    its own setting.
+    """
+    previous = os.environ.get("OPENBLAS_NUM_THREADS")
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    try:
+        return Pool(workers, initializer=init_worker)
+    finally:
+        if previous is None:
+            del os.environ["OPENBLAS_NUM_THREADS"]
+        else:
+            os.environ["OPENBLAS_NUM_THREADS"] = previous
+
+
 def save_features(path: Path, features: FeatureSet) -> None:
     """Write to a temporary file and rename, so an interrupted run never leaves a corrupt cache."""
     path.parent.mkdir(parents=True, exist_ok=True)

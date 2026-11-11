@@ -25,13 +25,12 @@ import argparse
 import os
 import sys
 from dataclasses import dataclass
-from multiprocessing import Pool
 
 import numpy as np
 import pandas as pd
 
 from near_duplicates.datasets import REPO_ROOT, dev_ground_truth, load_split
-from near_duplicates.features import cache_dir, cached_features, init_worker
+from near_duplicates.features import cache_dir, cached_features, worker_pool
 from near_duplicates.metrics import RESULT_COLUMNS, calibrate, pooled_rates, retrieval_scores, summarize
 from near_duplicates.plots import plot_recall, plot_s_curves
 from near_duplicates.systems import ContainmentSystem, PhashSystem, SpatiallyVerifiedSystem, VisualWordSystem, search
@@ -117,7 +116,7 @@ def main() -> None:
     print(f"{len(positions):,} of {len(full_index) + len(scale):,} indexed images, {len(sets)} query sets "
           f"of {len(sets[0].query_ids):,} queries", file=sys.stderr)
 
-    with Pool(args.workers, initializer=init_worker) as pool:
+    with worker_pool(args.workers) as pool:
         full = cached_features(cache / f"index_n{len(full_index)}.npz",
                                [(args.dataset, i, "clean", 0) for i in full_index], pool, "index")
         vocabulary = fitted_vocabulary(args.dataset, full.ids, full.descriptors, args.vocabulary, args.seed)

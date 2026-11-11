@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
+
 import imagehash
 import numpy as np
 from PIL import Image
 
 from conftest import textured_image
-from near_duplicates.features import FeatureSet, image_features, load_features, save_features, source_image
+from near_duplicates.features import FeatureSet, image_features, load_features, save_features, source_image, worker_pool
 from near_duplicates.local_features import extract_local_features
 from near_duplicates.phash import phash
 from near_duplicates.preprocessing import PHASH_PREPROCESS, preprocess_image
@@ -91,3 +93,10 @@ def test_feature_cache_rejects_other_image_lists(tmp_path):
     save_features(tmp_path / "f.npz", feature_set(["x", "y"], 0))
     assert load_features(tmp_path / "f.npz", ["y", "x"]) is None
     assert load_features(tmp_path / "missing.npz", ["x", "y"]) is None
+
+
+def test_worker_pool_starts_workers_with_one_blas_thread_and_leaves_the_parent_unchanged():
+    before = os.environ.get("OPENBLAS_NUM_THREADS")
+    with worker_pool(2) as pool:
+        assert pool.apply(os.getenv, ("OPENBLAS_NUM_THREADS",)) == "1"
+    assert os.environ.get("OPENBLAS_NUM_THREADS") == before
