@@ -29,15 +29,33 @@ test and DISC21 report queries remain reserved. The full Caltech calibration sel
 and crop/rotation limitations.
 
 ## System B – Local Features & MinHash
-- [ ] Extract SIFT Features
-- [ ] Build Visual Vocabulary with K-Means
-- [ ] Convert Images to Visual-Word Sets
-- [ ] Implement MinHash Signatures
-- [ ] Implement MinHash LSH Banding
-- [ ] Tune Vocabulary Size & LSH Parameters
-- [ ] Jaccard Similarity & Containment
-- [ ] Spatial Verification with RANSAC
+- [x] Extract SIFT Features
+- [x] Build Visual Vocabulary with K-Means
+- [x] Convert Images to Visual-Word Sets
+- [x] Implement MinHash Signatures
+- [x] Implement MinHash LSH Banding
+- [x] Tune Vocabulary Size & LSH Parameters
+- [x] Jaccard Similarity & Containment
+- [x] Spatial Verification with RANSAC
 
+
+```sh
+PYTHONPATH=src uv run python -m near_duplicates.system_b caltech101 --output results/system_b_caltech101.json
+# Small end-to-end smoke run (all stages, both seeds):
+PYTHONPATH=src uv run python -m near_duplicates.system_b caltech101 --limit 40 --vocab-sizes 16 32 --sample-descriptors 2000 --output /tmp/system_b_smoke.json
+```
+
+System B uses 512-pixel SIFT inputs, at most 300 features per image, and vocabularies
+fitted only on the reserved fitting pool. Calibration compares vocabulary sizes,
+MinHash banding, Jaccard/containment and RANSAC thresholds across two seeds. It
+writes a JSON summary and the gameplan's per-query CSV schema. Test queries remain
+reserved; full transformation-strength and scaling experiments are later work.
+
+The full Caltech calibration selected **4,096 words**, **64 × 2 MinHash banding**,
+and **containment threshold 0.3**. With RANSAC, mean validation Recall@1 is
+**96.08%** and precision **98.85%** across two seeds, averaging **367 candidates**
+per query. See the [run summary](results/system_b_caltech101.json) and method
+notes for seed ranges, transformation results and limitations.
 
 ## Testing & Evaluation
 - [ ] Generate Transformed Image Queries
@@ -123,9 +141,9 @@ Caltech-101 excludes `Faces_easy`, which holds crops of the `Faces` images.
 
 ### Preprocessing, fitting and caching
 
-- `preprocessing.py`: grayscale `uint8` images; 32 × 32 for pHash, maximum side 1,024 for SIFT (aspect ratio preserved). Use `iter_batches()` for loading.
+- `preprocessing.py`: `uint8` images; 32 × 32 grayscale for pHash, RGB with maximum side 512 for SIFT (aspect ratio preserved; converted to grayscale inside SIFT). Use `iter_batches()` for loading.
 - `fit_image_ids(dataset)`: vocabulary-fitting images excluding validation/test sources; 3,709 images for Caltech-101. Use seed 2807 for sampling and fitting.
-- `FeatureCache`: saves numeric feature arrays under `data/cache/`. Include extractor settings/version and vocabulary identity in cache parameters. Feature extraction follows in Systems A/B.
+- `FeatureCache`: saves numeric feature arrays under `data/cache/`. Include extractor settings/version and vocabulary identity in cache parameters. System B jointly caches pHash and SIFT from one decode and reuses transformed-query caches.
 
 Verify local data and run tests:
 
@@ -147,9 +165,17 @@ Expected: 8,709 Caltech images. The evaluation teammate should run the validator
   - `phash.py`: cached 64-bit DCT pHashes and exact Hamming distances.
   - `lsh.py`: seeded bit-sampling tables and full-hash candidate verification.
   - `system_a.py`: validation query probes, parameter sweep and calibration command.
+  - `local_features.py`: capped SIFT, joint pHash/SIFT caches and packed feature-shard export.
+  - `visual_words.py`: uniform descriptor sampling, MiniBatchKMeans and exact visual-word assignment.
+  - `minhash.py`: random-permutation MinHash, exact set scores and banded LSH.
+  - `visual_index.py`: candidate retrieval, exact verification and spatial reranking.
+  - `spatial.py`: descriptor ratio matching and RANSAC homography verification.
+  - `local_queries.py`: cached, seeded System B validation probes.
+  - `retrieval_metrics.py`: shared retrieval metrics and Wilson intervals.
+  - `system_b.py`: vocabulary/banding/verification calibration and shared CSV export.
 - `splits/`: the fixed splits, one image ID per line.
-- `tests/`: synthetic setup/data and System A checks; no dataset download needed.
-- `docs/system_a.md`: method, theory, validation and usage for System A.
+- `tests/`: synthetic setup/data and Systems A/B checks; no dataset download needed.
+- `docs/system_a.md`, `docs/system_b.md`: methods, course theory, calibration and usage.
 - `data/`: downloaded images and feature caches; gitignored.
 - `results/`: figures and run summaries; per-query CSVs are gitignored.
 
