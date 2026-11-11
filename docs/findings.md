@@ -245,6 +245,42 @@ Failure table (`failures`, medians over targets), where each representation brea
 - RANSAC: flips keep a median of 18 ratio-test matches and 11 inliers, against 235 and 234 for an unedited query; flip+JPEG at level 3 keeps 6 inliers.
 - The gallery of 69 sampled misses is written locally under `data/failures/` and never committed.
 
+## 15. Meta's development queries and deduplication on the aligned pipeline
+
+`run disc21 --split dev` with the frozen flags: thresholds calibrated on `dev_calibration`, scores on `dev_report` (5,000 queries with a match in the index, 5,000 without).
+
+| System | Recall at 1%, exhaustive | Recall at 1%, LSH | Micro-AP, exhaustive | Micro-AP, LSH |
+| --- | --- | --- | --- | --- |
+| pHash | 0.192 [0.182, 0.203] | 0.184 | 0.228 | 0.202 |
+| Visual words | 0.153 [0.143, 0.163] | 0.151 | 0.291 | 0.256 |
+| Visual words + RANSAC | 0.471 [0.458, 0.485] | 0.361 | 0.474 | 0.363 |
+| Visual words, containment | 0.042 | 0.077 | 0.223 | 0.213 |
+
+Meta's queries are much harder than the generated ones: exhaustive RANSAC's recall at the threshold is 0.471, against 0.832 on the test split.
+The RANSAC cascade reaches 0.510 [0.496, 0.523] exhaustive and 0.420 with LSH; fusion and the best possible combination are within 0.004, and pHash settles only 10% of queries, against 22% on the test split.
+The s-curve still predicts LSH recall@1 for visual words, 0.335 measured against 0.331 predicted.
+
+Douze et al. (2021, Table 2) report micro-AP on the development queries against all 1,000,000 references: GIST 14.4%, MultiGrain 16.5% (36.4% with score normalisation) and HOW+ASMK 17.3% (37.2%).
+RANSAC's 47.4% is not comparable one to one: our index holds 50,000 references, so far fewer can be confused with the source, and `dev_report` has a match for half of its queries against a fifth in Meta's set.
+Both make our score optimistic, so the comparison suggests that a classical local-feature pipeline with spatial verification is competitive with the published baselines, not that it beats them.
+
+Deduplication: `dedup disc21 --index-size 10000 --groups 1000 --copies 3` with the frozen LSH flags, 13,000 images, best adjusted Rand index per graph:
+
+| Graph | Threshold | Connected components | Louvain, resolution 100 |
+| --- | --- | --- | --- |
+| pHash | d <= 10 | 0.554 | 0.554 |
+| Visual words | J >= 0.2 | 0.813 | 0.840 |
+| Visual words | J >= 0.15 | 0.429 | 0.853 |
+| Visual words | J >= 0.1 | 0.008 | 0.708 |
+| RANSAC-verified | inliers >= 15 | 0.903 | 0.903 |
+| RANSAC-verified or pHash | inliers >= 15 or d <= 8 | 0.903 | 0.906 |
+
+RANSAC-verified edges answer the seat-5 question: they are clean enough (pair precision 0.997) that connected components suffice, and Louvain changes nothing.
+On unverified visual-word graphs Louvain at resolution 100 is what keeps loose thresholds usable (0.708 against 0.008 at J >= 0.1), so its value remains robustness to the edge threshold.
+The unverified union graph peaks at 0.777, below visual words alone, because the sweep joins each Jaccard threshold with a pHash distance of 10 to 14 bits, where pHash's own edges are already noisy (pair precision 0.83 at d <= 12, 0.40 at d <= 14); a union with d <= 8 was not swept unverified.
+Pair recall stays at most 0.83, since flips and level-3 chains reach no threshold.
+These thresholds and resolutions are chosen on this catalogue; `dedup --seed 1` plants a new catalogue on which the chosen settings are to be reported.
+
 ## Open for the seats
 
 - Seat 1: pHash (b, r) beyond one tuned point, and the scale point at 100,000 references to see whether the LSH advantage over the scan grows.
