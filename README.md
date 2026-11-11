@@ -4,7 +4,7 @@
 
 - [x] Project Setup & Dependencies
 - [x] Download Caltech101 (everyone needs their own copy)
-- [ ] Download DISC21 Dataset (only one person do this)
+- [x] Download DISC21 Dataset (only one person do this)
 - [x] Image Preprocessing
 - [x] Feature Caching & Data Loading
 - [x] Train, Validation & Test Splits
@@ -28,27 +28,27 @@
 - [x] Spatial Verification with RANSAC
 
 ## Testing & Evaluation
-- [ ] Generate Transformed Image Queries
-- [ ] Generate Distractor Queries
-- [ ] Implement Exhaustive Search Baselines
-- [ ] Evaluate Recall@1 & Precision
-- [ ] Compare LSH vs. Exhaustive Search
-- [ ] Evaluate LSH S-Curves
-- [ ] Analyze Failure Cases
+- [x] Generate Transformed Image Queries
+- [x] Generate Distractor Queries
+- [x] Implement Exhaustive Search Baselines
+- [x] Evaluate Recall@1 & Precision
+- [x] Compare LSH vs. Exhaustive Search
+- [x] Evaluate LSH S-Curves
+- [x] Analyze Failure Cases
 
 ## Scalability & Clustering
-- [ ] Benchmark Query Time & Memory
+- [x] Benchmark Query Time & Memory
 - [ ] Test Scalability (10K, 50K, 100K–200K Images)
-- [ ] Detect Near-Duplicate Pairs with LSH Self-Join
-- [ ] Build Image Similarity Graph
-- [ ] Compare Louvain vs. Connected Components
-- [ ] Evaluate Clustering Quality (ARI & Modularity)
+- [x] Detect Near-Duplicate Pairs with LSH Self-Join
+- [x] Build Image Similarity Graph
+- [x] Compare Louvain vs. Connected Components
+- [x] Evaluate Clustering Quality (ARI & Modularity)
 
 ## Final Experiments & Results
-- [ ] Compare pHash vs. Visual Words
-- [ ] Analyze Performance by Transformation Strength
-- [ ] Run DISC21 Development Evaluation
-- [ ] Perform Parameter Ablation Studies
+- [x] Compare pHash vs. Visual Words
+- [x] Analyze Performance by Transformation Strength
+- [x] Run DISC21 Development Evaluation
+- [x] Perform Parameter Ablation Studies
 - [ ] Generate Final Figures & Tables
 - [ ] Summarize Findings & Limitations
 
@@ -144,17 +144,18 @@ uv run pytest                                                  # tests
 
 Four systems are run on the split's targets and distractors under every condition in `transforms.CONDITIONS`, each searched exhaustively and through its LSH index: pHash, visual words, visual words whose top `--top-k` matches are re-ranked by RANSAC inliers (`visual-words+ransac`), and visual words scored by containment instead of Jaccard similarity (`visual-words-containment`); the last two share the visual-word LSH index.
 The conditions are single edits at graded strengths, extended until each system fails, and four chains of edits (`transforms.CHAINS`) at levels 1 to 3.
-`--index-size` searches a seeded subset of the index that always holds the targets, for the scaling measurements; the vocabulary always comes from the full index.
+`--index-size` searches a seeded subset of the index that always holds the targets, for the scaling measurements; the vocabulary always comes from the fitting pool (`fit_image_ids`), so only the index changes between scaling points.
 `--split dev` evaluates on DISC21's own development queries: thresholds from `dev_calibration`, scores on `dev_report`, with micro-average precision computed as in Meta's evaluation code, from the top prediction per query.
 Features are cached under `data/cache/` per image list, so a rerun with other LSH or vocabulary settings only repeats the search.
 `--help` lists the parameters: vocabulary size, MinHash permutations, bands and rows for both LSH families, the RANSAC shortlist, seed and target false-match rate.
+The defaults of `run` and `dedup` are the settings frozen on DISC21 validation (`docs/findings.md`, findings 10 and 13): 8,192 words, 256 permutations, MinHash b, r = 113, 2, bit sampling b, r = 17, 16, and a RANSAC shortlist of 10.
 Besides the per-query CSV, each run writes a summary CSV, `costs_<tag>.csv` (index memory, candidates and milliseconds per query) and figures.
 
 Every run writes `results/queries_<tag>.csv` with one row per query, system and mode, in the shared schema of `metrics.RESULT_COLUMNS`:
 
 | Column | Meaning |
 | --- | --- |
-| `system`, `mode` | `phash` or `visual-words`; `exhaustive` or `lsh` |
+| `system`, `mode` | `phash`, `visual-words`, `visual-words+ransac` or `visual-words-containment`; `exhaustive` or `lsh` |
 | `kind`, `strength` | the transformation and its parameter |
 | `query_id`, `true_id` | the source image; the indexed image it should match, empty for distractors |
 | `predicted`, `score` | the top result and its score, higher meaning more similar; empty and `-inf` without LSH candidates |
@@ -203,9 +204,10 @@ Rates pooled over conditions (`overall_<tag>.csv`, and the combinations) carry 9
   - `plots.py`, `run.py`, `analyze.py`: figures and the commands above.
 - `splits/`: the fixed splits, one image ID per line.
 - `tests/`: pytest suite; tests that need Caltech-101 skip when it is not downloaded.
-- `docs/findings.md`: reference findings on validation data, and what each seat inherits from them.
+- `docs/findings.md`: findings on validation, test, development queries and deduplication, with the commands behind them, and what each seat inherits from them.
+- `notebook.ipynb`: the code appendix; runs the pipeline on Caltech-101 and lists the DISC21 commands behind the report.
 - `data/`: downloaded images and feature caches; gitignored.
-- `results/`: figures and run summaries; per-query CSVs are gitignored.
+- `results/`: where runs write their CSVs and figures; gitignored, since every number and figure is reproducible from the commands above.
 
 ## Data licence
 

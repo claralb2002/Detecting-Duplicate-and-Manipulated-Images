@@ -1,6 +1,7 @@
 # DISC21 images may not be redistributed, and caches are large: data never enters git.
 data/
-results/*.csv
+results/*
+!results/.gitkeep
 *.npz
 *.npy
 
