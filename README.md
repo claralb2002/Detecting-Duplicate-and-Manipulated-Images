@@ -206,7 +206,7 @@ Rates pooled over conditions (`overall_<tag>.csv`, and the combinations) carry 9
 - `splits/`: the fixed splits, one image ID per line.
 - `tests/`: pytest suite; tests that need Caltech-101 skip when it is not downloaded.
 - `docs/findings.md`: findings on validation, test, development queries and deduplication, with the commands behind them, and what each seat inherits from them.
-- `notebook.ipynb`: the code appendix; runs the pipeline on Caltech-101 and lists the DISC21 commands behind the report.
+- `notebook.ipynb`: the self-contained code appendix; it imports nothing from `src/`, downloads the data, rebuilds and checks the splits, and reproduces every number in the report (`DATASET = "disc21"`, about 10.5 hours on 32 threads) or the same experiments on Caltech-101; on Caltech-101 validation its 16,640 per-query rows equal the package's exactly.
 - `data/`: downloaded images and feature caches; gitignored.
 - `results/`: where runs write their CSVs and figures; gitignored, since every number and figure is reproducible from the commands above.
 
