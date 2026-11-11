@@ -3,18 +3,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from near_duplicates.lsh import BandIndex, BitSampler, MinHasher, band_keys, bit_sampling_curve, hamming, s_curve
+from near_duplicates.lsh import BandIndex, BitSampler, band_keys, bit_sampling_curve, s_curve
 
 
 def random_codes(n: int, seed: int) -> np.ndarray:
     return np.random.default_rng(seed).integers(0, 2**64, size=n, dtype=np.uint64)
-
-
-def test_hamming_matches_python_popcount():
-    codes = random_codes(500, 0)
-    query = random_codes(1, 1)[0]
-    expected = [bin(int(c) ^ int(query)).count("1") for c in codes]
-    assert hamming(codes, query).tolist() == expected
 
 
 def test_bit_sampler_key_depends_only_on_sampled_bits():
@@ -45,24 +38,6 @@ def test_bit_sampling_curve_matches_simulation(distance):
     standard_error = np.sqrt(expected * (1 - expected) / trials)
     assert abs(hits / trials - expected) < 4 * standard_error + 1e-3
     assert expected < float(s_curve(1 - distance / 64, bands, rows))  # sampling without replacement is stricter
-
-
-def test_minhash_row_agreement_estimates_jaccard():
-    rng = np.random.default_rng(0)
-    shared = rng.choice(10_000, size=300, replace=False)
-    a = np.concatenate([shared[:200], np.arange(20_000, 20_100)])
-    b = np.concatenate([shared[:200], np.arange(30_000, 30_200)])
-    true_jaccard = 200 / (300 + 400 - 200)
-    hasher = MinHasher(num_perm=2000, seed=1)
-    estimate = (hasher.signature(a) == hasher.signature(b)).mean()
-    assert abs(estimate - true_jaccard) < 4 * np.sqrt(true_jaccard * (1 - true_jaccard) / 2000)
-
-
-def test_minhash_identical_and_disjoint_sets():
-    hasher = MinHasher(num_perm=256, seed=0)
-    items = np.arange(50, 400)
-    assert (hasher.signature(items) == hasher.signature(items[::-1].copy())).all()
-    assert (hasher.signature(items) == hasher.signature(np.arange(1000, 1350))).mean() < 0.05
 
 
 def test_band_key_changes_when_any_single_value_changes():

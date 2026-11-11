@@ -6,22 +6,15 @@ import pytest
 from near_duplicates.features import FeatureSet
 from near_duplicates.run import index_subset
 from near_duplicates.systems import ContainmentSystem, PhashSystem, VisualWordSystem, search
-from near_duplicates.vocabulary import incidence, nearest_word, word_sets
-
-
-def test_nearest_word_matches_brute_force_distance():
-    rng = np.random.default_rng(0)
-    centers = rng.normal(size=(64, 128)).astype(np.float32) * 40 + 100
-    descriptors = rng.integers(0, 256, size=(500, 128), dtype=np.uint8)
-    distances = ((descriptors[:, None, :].astype(float) - centers[None].astype(float)) ** 2).sum(axis=2)
-    assert (nearest_word(descriptors, centers) == distances.argmin(axis=1)).all()
+from near_duplicates.visual_words import VisualVocabulary
+from near_duplicates.vocabulary import incidence, word_sets
 
 
 def test_word_sets_keep_alignment_around_images_without_keypoints():
     centers = np.eye(4, 128, dtype=np.float32) * 255
     descriptor = lambda word: (np.eye(4, 128)[word] * 255).astype(np.uint8)
     lists = [np.stack([descriptor(0), descriptor(0), descriptor(2)]), np.zeros((0, 128), np.uint8), np.stack([descriptor(3)])]
-    sets = word_sets(lists, centers)
+    sets = word_sets(lists, VisualVocabulary(centers, {}))
     assert [s.tolist() for s in sets] == [[0, 2], [], [3]]
     assert incidence(sets, 4).toarray().tolist() == [[1, 0, 1, 0], [0, 0, 0, 0], [0, 0, 0, 1]]
 
@@ -35,7 +28,7 @@ def test_search_finds_planted_duplicates_and_reports_true_similarity():
     hashes = rng.integers(0, 2**64, size=len(index_ids), dtype=np.uint64)
     systems = [
         PhashSystem(hashes, bands=16, rows=8, seed=0),
-        VisualWordSystem([as_descriptors(w) for w in words], centers, num_perm=128, bands=64, rows=2, seed=0),
+        VisualWordSystem([as_descriptors(w) for w in words], VisualVocabulary(centers, {}), num_perm=128, bands=64, rows=2, seed=0),
     ]
     # Query 0 is r7 with one hash bit flipped and its word set intact; query 1 is a random distractor.
     queries = FeatureSet(["q0", "q1"], np.array([hashes[7] ^ np.uint64(1), rng.integers(0, 2**64, dtype=np.uint64)]),
@@ -60,7 +53,7 @@ def test_scoring_a_subset_equals_the_full_scores_at_those_positions():
     hashes = rng.integers(0, 2**64, size=300, dtype=np.uint64)
     queries = FeatureSet(["q"], hashes[:1] ^ np.uint64(5), descriptors[:1], [np.zeros((20, 2), np.float32)])
     positions = np.array([0, 17, 42, 299])
-    for system in (PhashSystem(hashes, 16, 8, seed=0), VisualWordSystem(descriptors, centers, 64, 32, 2, seed=0)):
+    for system in (PhashSystem(hashes, 16, 8, seed=0), VisualWordSystem(descriptors, VisualVocabulary(centers, {}), 64, 32, 2, seed=0)):
         encoded = system.encode(queries)
         full = system.scores(encoded, 0)
         assert np.allclose(system.scores(encoded, 0, positions), full[positions])
@@ -84,9 +77,10 @@ def test_containment_scores_a_cropped_word_set_as_fully_contained_while_jaccard_
     centers = rng.normal(size=(128, 128)).astype(np.float32) * 30 + 120
     as_descriptors = lambda ws: np.clip(np.rint(centers[ws]), 0, 255).astype(np.uint8)
     index_words = [rng.choice(128, size=40, replace=False) for _ in range(30)]
-    words = VisualWordSystem([as_descriptors(w) for w in index_words], centers, num_perm=64, bands=32, rows=2, seed=0)
+    vocabulary = VisualVocabulary(centers, {})
+    words = VisualWordSystem([as_descriptors(w) for w in index_words], vocabulary, num_perm=64, bands=32, rows=2, seed=0)
     containment = ContainmentSystem(words)
-    crop = word_sets([as_descriptors(index_words[5][:10])], centers)  # a quarter of image 5's words
+    crop = word_sets([as_descriptors(index_words[5][:10])], vocabulary)  # a quarter of image 5's words
     assert containment.similarity(crop, 0, 5) == 1.0
     assert words.similarity(crop, 0, 5) == 0.25
     assert containment.rank(crop, 0)[0] == 5

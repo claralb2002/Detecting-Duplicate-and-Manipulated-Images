@@ -5,7 +5,7 @@
 The mechanism table gives, per condition and over the targets, the quantity each representation breaks on:
 the Hamming distance of the true pair for pHash; the SIFT keypoints left in the query and the Jaccard
 similarity of the true pair for visual words; and the ratio-test matches and RANSAC inliers of the true pair
-for spatial verification (matches on a sample of targets, since they are recomputed here).
+for spatial verification (unique ratio-test matches on a sample of targets, since they are recomputed here).
 
 The gallery samples misses of each system at the first strength of each transformation where its recall@1
 falls below 0.5, and shows query, wrong answer and true source side by side, with each image's Flickr
@@ -28,11 +28,11 @@ import numpy as np
 import pandas as pd
 
 from near_duplicates.datasets import DATA_DIR, DISC21_DIR, image_path, load_split
-from near_duplicates.features import load_features, load_image
-from near_duplicates.lsh import CODE_BITS
+from near_duplicates.features import cache_dir, load_features, source_image
 from near_duplicates.metrics import is_target
+from near_duplicates.phash import HASH_BITS
 from near_duplicates.transforms import CONDITIONS, query_seed, transform
-from near_duplicates.verification import ratio_matches
+from near_duplicates.spatial import verify_spatial
 
 RUN_FILE = re.compile(r"queries_(?P<dataset>[a-z0-9]+)_.*_(?P<split>val|test)$")
 SYSTEMS = ("phash", "visual-words", "visual-words+ransac")
@@ -53,7 +53,7 @@ def mechanisms(results: pd.DataFrame, query_keypoints: dict[tuple[str, float], n
             continue
         rows.append(dict(
             kind=kind, strength=strength,
-            phash_distance=CODE_BITS * (1 - true.loc[key, "phash"]), phash_recall=recall.loc[key, "phash"],
+            phash_distance=HASH_BITS * (1 - true.loc[key, "phash"]), phash_recall=recall.loc[key, "phash"],
             query_keypoints=float(np.median(query_keypoints[key])), true_jaccard=true.loc[key, "visual-words"],
             words_recall=recall.loc[key, "visual-words"], ratio_matches=float(np.median(matches[key])),
             inliers=true.loc[key, "visual-words+ransac"], ransac_recall=recall.loc[key, "visual-words+ransac"],
@@ -92,10 +92,10 @@ def gallery(results: pd.DataFrame, system: str, per_condition: int, dataset: str
     for row, miss in zip(axes, chosen):
         # The grid's own strength value, not the CSV's float, keeps the query's seed and so its exact edit.
         strength = ORIGINAL_STRENGTH[(miss.kind, miss.strength)]
-        query = transform(load_image(image_path(dataset, miss.query_id)), miss.kind, strength,
+        query = transform(source_image(image_path(dataset, miss.query_id)), miss.kind, strength,
                           np.random.default_rng(query_seed(miss.kind, strength, miss.query_id)))
-        panels = ((query, f"{miss.kind} {miss.strength:g}"), (load_image(image_path(dataset, miss.predicted)),
-                  f"answer {miss.predicted}, score {miss.score:.3g}"), (load_image(image_path(dataset, miss.true_id)),
+        panels = ((query, f"{miss.kind} {miss.strength:g}"), (source_image(image_path(dataset, miss.predicted)),
+                  f"answer {miss.predicted}, score {miss.score:.3g}"), (source_image(image_path(dataset, miss.true_id)),
                   f"source {miss.true_id}, {miss.true_similarity:.3g}"))
         for ax, (img, title) in zip(row, panels):
             ax.imshow(img)
@@ -124,7 +124,7 @@ def main() -> None:
     results = pd.read_csv(args.queries, keep_default_na=False, na_values={"true_similarity": [""]})
     results["strength"] = results.strength.astype(float)
 
-    cache = DATA_DIR / "cache" / dataset
+    cache = cache_dir(dataset)
     full_index = load_split(dataset, "index")
     index = load_features(cache / f"index_n{len(full_index)}.npz", full_index)
     position = {image_id: i for i, image_id in enumerate(full_index)}
@@ -140,7 +140,10 @@ def main() -> None:
             key = (kind, float(strength))
             keypoints[key] = np.array([len(d) for d in queries.descriptors[: len(targets)]])
             matches[key] = np.fromiter(pool.map(
-                lambda i: len(ratio_matches(queries.descriptors[i], index.descriptors[position[targets[i]]])[0]), sample.tolist()), int)
+                lambda i: verify_spatial({"keypoints": queries.keypoints[i], "descriptors": queries.descriptors[i]},
+                                         {"keypoints": index.keypoints[position[targets[i]]],
+                                          "descriptors": index.descriptors[position[targets[i]]]}).matches,
+                sample.tolist()), int)
     table = mechanisms(results, keypoints, matches)
     table.to_csv(args.queries.parent / f"mechanisms_{tag}.csv", index=False)
     pd.set_option("display.width", 200)

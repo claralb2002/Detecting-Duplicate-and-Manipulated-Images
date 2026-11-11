@@ -2,7 +2,8 @@
 
 System A ("phash"): 64-bit perceptual hash, bit-sampling LSH, score = -Hamming distance.
 System B ("visual-words"): SIFT visual-word sets, MinHash with banded LSH, score = Jaccard similarity.
-System B with spatial verification ("visual-words+ransac"): B's top-k by Jaccard re-ranked by RANSAC inliers.
+System B with spatial verification ("visual-words+ransac"): B's top-k by Jaccard re-ranked by the inliers of an
+accepted RANSAC homography.
 System B scored by containment ("visual-words-containment"): the share of the query's words found in the image.
 Each system is searched exhaustively and through its LSH index, so the loss caused by LSH is measurable.
 """
@@ -15,8 +16,11 @@ from typing import Any, Protocol
 import numpy as np
 
 from near_duplicates.features import FeatureSet
-from near_duplicates.lsh import CODE_BITS, BandIndex, BitSampler, MinHasher, band_keys, hamming
-from near_duplicates.verification import inliers
+from near_duplicates.lsh import BandIndex, BitSampler, band_keys
+from near_duplicates.minhash import MinHasher
+from near_duplicates.phash import HASH_BITS, hamming_distances
+from near_duplicates.spatial import accepted_inliers
+from near_duplicates.visual_words import VisualVocabulary
 from near_duplicates.vocabulary import incidence, word_sets
 
 
@@ -54,14 +58,14 @@ class PhashSystem:
     def scores(self, hashes: np.ndarray, query: int, positions: np.ndarray | None = None) -> np.ndarray:
         """Scores against the indexed images at `positions`, or against all of them."""
         codes = self.hashes if positions is None else self.hashes[positions]
-        return -hamming(codes, hashes[query]).astype(float)
+        return -hamming_distances(hashes[query], codes).astype(float)
 
     def rank(self, hashes: np.ndarray, query: int, positions: np.ndarray | None = None) -> tuple[int, float]:
         return top(self.scores(hashes, query, positions), positions)
 
     def similarity(self, hashes: np.ndarray, query: int, position: int) -> float:
         """Fraction of agreeing bits, the per-row agreement probability of bit sampling."""
-        return 1 + float(self.scores(hashes, query, np.array([position]))[0]) / CODE_BITS
+        return 1 + float(self.scores(hashes, query, np.array([position]))[0]) / HASH_BITS
 
     def memory_bytes(self) -> int:
         return self.hashes.nbytes + self.index.nbytes
@@ -70,24 +74,25 @@ class PhashSystem:
 class VisualWordSystem:
     name = "visual-words"
 
-    def __init__(self, descriptors: list[np.ndarray], centers: np.ndarray, num_perm: int, bands: int, rows: int, seed: int):
-        self.centers, self.bands, self.rows, self.seed = centers, bands, rows, seed
-        sets = word_sets(descriptors, centers)
-        self.matrix = incidence(sets, len(centers))
+    def __init__(self, descriptors: list[np.ndarray], vocabulary: VisualVocabulary, num_perm: int, bands: int, rows: int, seed: int):
+        self.vocabulary, self.bands, self.rows, self.seed = vocabulary, bands, rows, seed
+        self.words = len(vocabulary.centers)
+        sets = word_sets(descriptors, vocabulary)
+        self.matrix = incidence(sets, self.words)
         self.sizes = np.asarray(self.matrix.sum(axis=1)).ravel()
-        self.minhasher = MinHasher(num_perm, seed=seed)
+        self.minhasher = MinHasher(self.words, num_perm=num_perm, seed=seed)
         self.index = BandIndex(self.keys(sets))
 
     def encode(self, features: FeatureSet) -> list[np.ndarray]:
-        return word_sets(features.descriptors, self.centers)
+        return word_sets(features.descriptors, self.vocabulary)
 
     def keys(self, sets: list[np.ndarray]) -> np.ndarray:
-        return band_keys(self.minhasher.signatures(sets), self.bands, self.rows, seed=self.seed + 1)
+        return band_keys(self.minhasher.transform(sets), self.bands, self.rows, seed=self.seed + 1)
 
     def intersections(self, sets: list[np.ndarray], query: int, positions: np.ndarray | None) -> tuple[np.ndarray, np.ndarray]:
         """Words shared with, and word counts of, the indexed images at `positions`, or of all of them."""
         matrix, sizes = (self.matrix, self.sizes) if positions is None else (self.matrix[positions], self.sizes[positions])
-        indicator = np.zeros(len(self.centers), np.float32)
+        indicator = np.zeros(self.words, np.float32)
         indicator[sets[query]] = 1
         return matrix @ indicator, sizes
 
@@ -105,7 +110,7 @@ class VisualWordSystem:
 
     def memory_bytes(self) -> int:
         matrix = self.matrix.data.nbytes + self.matrix.indices.nbytes + self.matrix.indptr.nbytes
-        return matrix + self.sizes.nbytes + self.centers.nbytes + self.index.nbytes
+        return matrix + self.sizes.nbytes + self.vocabulary.centers.nbytes + self.minhasher.ranks.nbytes + self.index.nbytes
 
 
 class ContainmentSystem:
@@ -161,8 +166,8 @@ class SpatiallyVerifiedSystem:
         return self.base.keys(encoded[0])
 
     def verify(self, features: FeatureSet, query: int, position: int) -> int:
-        return inliers(features.keypoints[query], self.keypoints[position],
-                       features.descriptors[query], self.descriptors[position])
+        return accepted_inliers(features.keypoints[query], self.keypoints[position],
+                                features.descriptors[query], self.descriptors[position])
 
     def rank(self, encoded: tuple[list[np.ndarray], FeatureSet], query: int,
              positions: np.ndarray | None = None) -> tuple[int, float]:

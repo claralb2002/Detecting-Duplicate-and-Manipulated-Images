@@ -30,16 +30,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from near_duplicates.datasets import DATA_DIR, load_split
-from near_duplicates.features import cached_features, init_worker, load_features
-from near_duplicates.lsh import CODE_BITS, bit_sampling_curve, s_curve
+from near_duplicates.datasets import load_split
+from near_duplicates.features import cache_dir, cached_features, init_worker, load_features
+from near_duplicates.lsh import bit_sampling_curve, s_curve
 from near_duplicates.metrics import is_target, threshold_at_fmr
+from near_duplicates.phash import HASH_BITS
 from near_duplicates.run import index_subset
 from near_duplicates.transforms import CONDITIONS
-from near_duplicates.vocabulary import davies_bouldin, descriptor_sample, fitted_vocabulary, incidence, word_sets
+from near_duplicates.vocabulary import fitted_vocabulary, incidence, word_sets
 
 JACCARD_BINS = 10_000
-DAVIES_BOULDIN_SAMPLE = 200_000
 VERIFIED = "visual-words+ransac"
 RUN_TAG = re.compile(r"queries_(?P<dataset>[a-z0-9]+)_n(?P<index_size>\d+)_k(?P<vocabulary>\d+)_p(?P<num_perm>\d+)"
                      r"_mb(?P<minhash_bands>\d+)r(?P<minhash_rows>\d+)_bb(?P<bit_bands>\d+)r(?P<bit_rows>\d+)"
@@ -95,8 +95,8 @@ def jaccard_profile(index: np.ndarray, index_sizes: np.ndarray, queries: np.ndar
 def hamming_profile(index: np.ndarray, queries: np.ndarray, true_positions: np.ndarray) -> Profile:
     """Profile of 64-bit codes; the similarity is the negated Hamming distance, as pHash scores it."""
     distance = np.bitwise_count(index[None, :] ^ queries[:, None]).astype(np.int64)
-    histogram = np.bincount(distance.ravel(), minlength=CODE_BITS + 1)
-    return Profile(*summarize_rows(-distance, true_positions), histogram, np.arange(CODE_BITS + 1))
+    histogram = np.bincount(distance.ravel(), minlength=HASH_BITS + 1)
+    return Profile(*summarize_rows(-distance, true_positions), histogram, np.arange(HASH_BITS + 1))
 
 
 def concatenate(parts: list[Profile]) -> Profile:
@@ -162,15 +162,14 @@ def main() -> None:
     full_index = load_split(dataset, "index")
     targets, distractors = load_split(dataset, "val_targets"), load_split(dataset, "val_distractors")
     positions = index_subset(full_index, set(targets), run["index_size"], seed)
-    cache = DATA_DIR / "cache" / dataset
+    cache = cache_dir(dataset)
     with Pool(args.workers, initializer=init_worker) as pool:
         full = cached_features(cache / f"index_n{len(full_index)}.npz", [(dataset, i, "clean", 0) for i in full_index], pool, "index")
         vocabularies = {k: fitted_vocabulary(dataset, full.ids, full.descriptors, k, seed) for k in args.vocabulary}
     index = full.subset(positions)
     position_of = {image_id: i for i, image_id in enumerate(index.ids)}
-    dense = {k: incidence(word_sets(index.descriptors, centers), k).toarray() for k, centers in vocabularies.items()}
+    dense = {k: incidence(word_sets(index.descriptors, vocabulary), k).toarray() for k, vocabulary in vocabularies.items()}
     sizes = {k: matrix.sum(axis=1) for k, matrix in dense.items()}
-    sample = descriptor_sample(full.descriptors, DAVIES_BOULDIN_SAMPLE, seed + 1)
 
     ids = targets + distractors
     true_positions = np.array([position_of[t] for t in targets] + [-1] * len(distractors))
@@ -181,8 +180,8 @@ def main() -> None:
             sys.exit(f"query features for {kind} {strength} are missing: run the validation split first")
         print(f"{kind} {strength}", file=sys.stderr)
         hamming_parts.append(hamming_profile(index.hashes, queries.hashes, true_positions))
-        for k, centers in vocabularies.items():
-            jaccard_parts[k].append(jaccard_profile(dense[k], sizes[k], incidence(word_sets(queries.descriptors, centers), k).toarray(),
+        for k, vocabulary in vocabularies.items():
+            jaccard_parts[k].append(jaccard_profile(dense[k], sizes[k], incidence(word_sets(queries.descriptors, vocabulary), k).toarray(),
                                                     true_positions))
         keys += [(kind, float(strength), q) for q in ids]
     target = np.tile(true_positions >= 0, len(CONDITIONS))
@@ -202,7 +201,7 @@ def main() -> None:
         for top_k in args.top_k:
             shortlisted = target & (profile.rank >= 0) & (profile.rank < top_k) & (inliers > inlier_threshold)
             grids.append(minhash_grid(profile, VERIFIED, shortlisted, target, args.num_perm).assign(vocabulary=k, top_k=top_k))
-        study.append(dict(vocabulary=k, davies_bouldin=davies_bouldin(sample, vocabularies[k]),
+        study.append(dict(vocabulary=k, davies_bouldin=vocabularies[k].metadata["davies_bouldin"],
                           mean_true_jaccard=np.nanmean(profile.true_similarity), recall_at_1=profile.top_correct[target].mean(),
                           recall_at_threshold=accepted[target].mean(),
                           **{f"verified_top{t}": (target & (profile.rank >= 0) & (profile.rank < t) & (inliers > inlier_threshold))[target].mean()

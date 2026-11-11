@@ -1,4 +1,4 @@
-"""Own MinHash signatures and banded LSH, following Week 4 Exercises 3-7."""
+"""Own MinHash signatures, following Week 4 Exercises 3-7; banding is `lsh.band_keys` with `lsh.BandIndex`."""
 
 from collections.abc import Sequence
 import hashlib
@@ -16,17 +16,6 @@ def word_set(words: Sequence[int] | np.ndarray, vocabulary_size: int | None = No
         raise ValueError("visual word outside vocabulary")
     return np.unique(array.astype(np.uint32))
 
-
-def jaccard(left: Sequence[int], right: Sequence[int]) -> float:
-    left, right = word_set(left), word_set(right)
-    intersection = len(np.intersect1d(left, right, assume_unique=True))
-    union = len(left) + len(right) - intersection
-    return intersection / union if union else 0.0  # Empty images are never evidence of a match.
-
-
-def containment(query: Sequence[int], reference: Sequence[int]) -> float:
-    query, reference = word_set(query), word_set(reference)
-    return len(np.intersect1d(query, reference, assume_unique=True)) / len(query) if len(query) else 0.0
 
 
 class MinHasher:
@@ -54,58 +43,3 @@ class MinHasher:
 
     def transform(self, sets: Sequence[Sequence[int]]) -> np.ndarray:
         return np.array([self.signature(s) for s in sets], dtype=np.uint32).reshape(-1, self.num_perm)
-
-
-def estimated_jaccard(left: np.ndarray, right: np.ndarray) -> float:
-    left, right = np.asarray(left), np.asarray(right)
-    if left.ndim != 1 or left.shape != right.shape or not len(left):
-        raise ValueError("signatures must be nonempty vectors of equal length")
-    if np.all(left == EMPTY) or np.all(right == EMPTY):
-        return 0.0
-    return float(np.mean(left == right))
-
-
-def candidate_probability(similarity: float, b: int, r: int) -> float:
-    if not np.isfinite(similarity) or not 0 <= similarity <= 1:
-        raise ValueError("similarity must lie in [0, 1]")
-    if any(type(v) is not int or v < 1 for v in (b, r)):
-        raise ValueError("b and r must be positive integers")
-    p = similarity ** r
-    return float(-np.expm1(b * np.log1p(-p))) if 0 < p < 1 else p
-
-
-class MinHashLSH:
-    """Disjoint bands: AND r signature entries, OR b bands, with num_perm=b*r."""
-
-    def __init__(self, signatures: np.ndarray, image_ids: Sequence[str], *, b: int, r: int):
-        signatures = np.asarray(signatures)
-        if any(type(v) is not int or v < 1 for v in (b, r)):
-            raise ValueError("b and r must be positive integers")
-        if signatures.ndim != 2 or signatures.shape != (len(image_ids), b * r) or signatures.dtype != np.uint32:
-            raise ValueError("signatures must be uint32 with shape (images, b*r)")
-        if len(set(image_ids)) != len(image_ids) or any(not isinstance(i, str) for i in image_ids):
-            raise ValueError("image IDs must be unique strings")
-        self.signatures = signatures.copy()
-        self.signatures.flags.writeable = False
-        self.image_ids, self.b, self.r = tuple(image_ids), b, r
-        self.tables = []
-        for band in range(b):
-            table: dict[bytes, list[int]] = {}
-            for row, signature in enumerate(signatures):
-                if np.all(signature == EMPTY):
-                    continue
-                key = signature[band*r:(band+1)*r].astype("<u4").tobytes()
-                table.setdefault(key, []).append(row)
-            self.tables.append(table)
-
-    def candidates(self, signature: np.ndarray) -> np.ndarray:
-        signature = np.asarray(signature)
-        if signature.shape != (self.b * self.r,) or signature.dtype != np.uint32:
-            raise ValueError("query signature must be uint32 of length b*r")
-        if np.all(signature == EMPTY):
-            return np.empty(0, np.intp)
-        rows: set[int] = set()
-        for band, table in enumerate(self.tables):
-            key = signature[band*self.r:(band+1)*self.r].astype("<u4").tobytes()
-            rows.update(table.get(key, ()))
-        return np.array(sorted(rows), dtype=np.intp)

@@ -2,12 +2,9 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Iterator
 
 import numpy as np
 from PIL import Image, ImageOps
-
-from near_duplicates.datasets import image_path, load_split
 
 
 @dataclass(frozen=True)
@@ -56,28 +53,3 @@ def preprocess_image(image: Image.Image, config: PreprocessConfig = SIFT_PREPROC
     elif config.max_side is not None:
         image.thumbnail((config.max_side, config.max_side), Image.Resampling.LANCZOS)
     return np.array(image, dtype=np.uint8)
-
-
-def iter_images(
-    dataset: str, split: str, config: PreprocessConfig = SIFT_PREPROCESS,
-) -> Iterator[tuple[str, np.ndarray]]:
-    """Yield image IDs and pixels in committed split order, one image at a time."""
-    for image_id in load_split(dataset, split):
-        yield image_id, load_image(image_path(dataset, image_id), config)
-
-
-def iter_batches(
-    dataset: str, split: str, config: PreprocessConfig = SIFT_PREPROCESS,
-    batch_size: int = 32,
-) -> Iterator[list[tuple[str, np.ndarray]]]:
-    """Yield bounded batches; lists support images with different aspect ratios."""
-    if type(batch_size) is not int or batch_size <= 0:
-        raise ValueError("batch_size must be a positive integer")
-    batch = []
-    for item in iter_images(dataset, split, config):
-        batch.append(item)
-        if len(batch) == batch_size:
-            yield batch
-            batch = []
-    if batch:
-        yield batch

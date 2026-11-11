@@ -2,21 +2,21 @@ from __future__ import annotations
 
 import numpy as np
 
-from near_duplicates.features import FeatureSet, load_image, phash, sift_features
+from near_duplicates.features import FeatureSet, image_features, source_image
+from near_duplicates.spatial import accepted_inliers as inliers, pair_inliers
 from near_duplicates.systems import SpatiallyVerifiedSystem, VisualWordSystem
 from near_duplicates.transforms import transform
-from near_duplicates.verification import inliers, pair_inliers, ratio_matches
-from near_duplicates.vocabulary import build_vocabulary
+from near_duplicates.visual_words import fit_vocabulary
 
 
 def features_of(images) -> FeatureSet:
-    extracted = [sift_features(img) for img in images]
-    return FeatureSet([f"i{n}" for n in range(len(images))], np.array([phash(img) for img in images], dtype=np.uint64),
-                      [d for _, d in extracted], [k for k, _ in extracted])
+    extracted = [image_features(img) for img in images]
+    return FeatureSet([f"i{n}" for n in range(len(images))], np.array([h for h, _, _ in extracted], dtype=np.uint64),
+                      [d for _, _, d in extracted], [k for _, k, _ in extracted])
 
 
 def test_geometric_edits_keep_more_inliers_than_any_unrelated_image(caltech_sample):
-    images = [load_image(p) for p in caltech_sample[:12]]
+    images = [source_image(p) for p in caltech_sample[:12]]
     reference = features_of(images)
     rng = np.random.default_rng(0)
     for kind, strength in (("crop", 0.5), ("rotate", 15), ("downscale", 0.5), ("overlay", 0.3)):
@@ -29,8 +29,8 @@ def test_geometric_edits_keep_more_inliers_than_any_unrelated_image(caltech_samp
 
 
 def test_inlier_count_does_not_depend_on_call_order(caltech_sample):
-    f = features_of([load_image(p) for p in caltech_sample[:3]])
-    q = features_of([transform(load_image(caltech_sample[0]), "rotate", 30, np.random.default_rng(0))])
+    f = features_of([source_image(p) for p in caltech_sample[:3]])
+    q = features_of([transform(source_image(caltech_sample[0]), "rotate", 30, np.random.default_rng(0))])
     first = inliers(q.keypoints[0], f.keypoints[0], q.descriptors[0], f.descriptors[0])
     inliers(q.keypoints[0], f.keypoints[1], q.descriptors[0], f.descriptors[1])
     assert inliers(q.keypoints[0], f.keypoints[0], q.descriptors[0], f.descriptors[0]) == first
@@ -39,15 +39,14 @@ def test_inlier_count_does_not_depend_on_call_order(caltech_sample):
 def test_images_without_descriptors_have_no_matches():
     empty = np.zeros((0, 128), np.uint8)
     some = np.random.default_rng(0).integers(0, 256, (5, 128), dtype=np.uint8)
-    assert len(ratio_matches(empty, some)[0]) == 0 and len(ratio_matches(some, empty)[0]) == 0
     assert inliers(np.zeros((0, 2), np.float32), np.zeros((5, 2), np.float32), empty, some) == 0
 
 
 def test_verified_system_reranks_its_shortlist_by_inliers(caltech_sample):
-    images = [load_image(p) for p in caltech_sample[:30]]
+    images = [source_image(p) for p in caltech_sample[:30]]
     index = features_of(images)
-    centers = build_vocabulary(index.descriptors, k=64, seed=0, sample_size=20_000)
-    words = VisualWordSystem(index.descriptors, centers, num_perm=64, bands=32, rows=2, seed=0)
+    vocabulary = fit_vocabulary(np.concatenate(index.descriptors)[::5].astype(np.float32), 64, seed=0)
+    words = VisualWordSystem(index.descriptors, vocabulary, num_perm=64, bands=32, rows=2, seed=0)
     queries = features_of([transform(images[i], "crop", 0.3, np.random.default_rng(i)) for i in (3, 17)])
     everything = SpatiallyVerifiedSystem(words, index.descriptors, index.keypoints, top_k=30)
     shortlist = SpatiallyVerifiedSystem(words, index.descriptors, index.keypoints, top_k=3)
@@ -64,9 +63,9 @@ def test_verified_system_reranks_its_shortlist_by_inliers(caltech_sample):
 
 def test_threaded_pair_inliers_equal_sequential_counts(caltech_sample):
     rng = np.random.default_rng(0)
-    features = [sift_features(transform(load_image(p), "rotate", 10, rng)) for p in caltech_sample[:12]]
-    features += [sift_features(load_image(p)) for p in caltech_sample[:12]]
-    keypoints, descriptors = [k for k, _ in features], [d for _, d in features]
+    features = [image_features(transform(source_image(p), "rotate", 10, rng)) for p in caltech_sample[:12]]
+    features += [image_features(source_image(p)) for p in caltech_sample[:12]]
+    keypoints, descriptors = [k for _, k, _ in features], [d for _, _, d in features]
     i, j = np.repeat(np.arange(12), 3), np.concatenate([[n + 12, (n + 1) % 12 + 12, (n + 5) % 12 + 12] for n in range(12)])
     threaded = pair_inliers(i, j, keypoints, descriptors, workers=6)
     assert threaded.tolist() == [inliers(keypoints[a], keypoints[b], descriptors[a], descriptors[b]) for a, b in zip(i, j)]

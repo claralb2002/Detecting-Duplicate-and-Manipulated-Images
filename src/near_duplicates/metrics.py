@@ -13,7 +13,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from near_duplicates.lsh import CODE_BITS, bit_sampling_curve, s_curve
+from near_duplicates.lsh import bit_sampling_curve, s_curve
+from near_duplicates.phash import HASH_BITS
 
 RESULT_COLUMNS = [
     "system", "mode", "kind", "strength", "query_id", "true_id", "predicted", "score",
@@ -168,7 +169,7 @@ def candidate_probability(results: pd.DataFrame, bit_bands: int, bit_rows: int, 
     probability = np.full(len(results), np.nan)
     phash = (results.system == "phash").to_numpy() & ~np.isnan(pairs)
     words = (results.system == "visual-words").to_numpy() & ~np.isnan(pairs)
-    probability[phash] = bit_sampling_curve(np.rint(CODE_BITS * (1 - pairs[phash])).astype(int), bit_bands, bit_rows)
+    probability[phash] = bit_sampling_curve(np.rint(HASH_BITS * (1 - pairs[phash])).astype(int), bit_bands, bit_rows)
     probability[words] = s_curve(pairs[words], minhash_bands, minhash_rows)
     return probability
 

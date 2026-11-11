@@ -1,4 +1,9 @@
-"""Image preprocessing, the 64-bit perceptual hash, SIFT descriptors, and cached batch extraction.
+"""Cached batch extraction of every image's pHash, SIFT keypoints and descriptors.
+
+An image is decoded at full resolution with the shared preprocessing (`local_features.RGB_SOURCE`), edited
+there by `transforms.transform`, as a re-upload edits the original, and handed to
+`local_features.extract_local_features`, which hashes the edited pixels and runs SIFT on a copy of at most
+512 pixels.
 
 A feature cache is one `.npz` per image list with `ids`, `hashes`, `descriptors` (all images stacked,
 uint8), `keypoints` (the (x, y) position of each descriptor, float32) and `offsets` (image i owns rows
@@ -7,6 +12,7 @@ offsets[i]:offsets[i+1] of both), plus the settings that produced it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -16,17 +22,26 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import scipy.fft
 from PIL import Image
 from tqdm import tqdm
 
-from near_duplicates.datasets import image_path
+from near_duplicates.datasets import DATA_DIR, image_path
+from near_duplicates.local_features import RGB_SOURCE, SIFTConfig, extract_local_features
+from near_duplicates.preprocessing import load_image
 from near_duplicates.transforms import query_seed, transform
 
-MAX_SIDE = 512
-SIFT_FEATURES = 300
 DESCRIPTOR_SIZE = 128
-SETTINGS = json.dumps({"max_side": MAX_SIDE, "sift_features": SIFT_FEATURES, "phash": "imagehash-dct", "keypoints": "xy"})
+SETTINGS = json.dumps({"extractor": SIFTConfig().parameters, "edits": "full resolution", "descriptors": "uint8"}, sort_keys=True)
+
+
+def cache_dir(dataset: str) -> Path:
+    """Feature caches and vocabularies for `dataset` under the current extractor settings.
+
+    Caches made with other settings live in other folders, so two versions of the pipeline never overwrite
+    each other's caches.
+    """
+    return DATA_DIR / "cache" / f"{dataset}-{hashlib.sha256(SETTINGS.encode()).hexdigest()[:8]}"
+
 
 Job = tuple[str, str, str, float]
 """(dataset, image ID, transformation kind, strength)."""
@@ -48,39 +63,24 @@ class FeatureSet:
                           self.descriptors + other.descriptors, self.keypoints + other.keypoints)
 
 
-def load_image(path: Path) -> Image.Image:
-    img = Image.open(path).convert("RGB")
-    img.thumbnail((MAX_SIDE, MAX_SIDE), Image.Resampling.LANCZOS)
-    return img
+def source_image(path: Path) -> Image.Image:
+    """The full-resolution RGB image, decoded by the shared preprocessing."""
+    return Image.fromarray(load_image(path, RGB_SOURCE))
 
 
-def phash(img: Image.Image) -> np.uint64:
-    """pHash: 32x32 grayscale, unnormalised 2-D DCT-II, 8x8 low-frequency block thresholded at its median.
+def image_features(img: Image.Image) -> tuple[np.uint64, np.ndarray, np.ndarray]:
+    """pHash, keypoint positions and descriptors of one image.
 
-    Bit i (most significant first) is coefficient (i // 8, i % 8), matching `imagehash.phash(img).hash.ravel()`.
+    OpenCV saturates SIFT descriptor values to the integers 0-255, so storing them as uint8 is lossless.
     """
-    pixels = np.asarray(img.convert("L").resize((32, 32), Image.Resampling.LANCZOS), dtype=np.float64)
-    low_frequencies = scipy.fft.dctn(pixels, type=2)[:8, :8]
-    bits = (low_frequencies > np.median(low_frequencies)).ravel()
-    return np.packbits(bits).view(">u8")[0].astype(np.uint64)
-
-
-def sift_features(img: Image.Image) -> tuple[np.ndarray, np.ndarray]:
-    """Keypoint positions (x, y) in pixels and their descriptors, row-aligned, at most about SIFT_FEATURES.
-
-    OpenCV saturates each descriptor value to 0-255, so storing descriptors as uint8 is lossless.
-    """
-    keypoints, descriptors = cv2.SIFT_create(nfeatures=SIFT_FEATURES).detectAndCompute(np.asarray(img.convert("L")), None)
-    if descriptors is None:
-        return np.zeros((0, 2), np.float32), np.zeros((0, DESCRIPTOR_SIZE), np.uint8)
-    return np.array([k.pt for k in keypoints], np.float32).reshape(-1, 2), descriptors.astype(np.uint8)
+    features = extract_local_features(np.asarray(img.convert("RGB")))
+    return features["hashes"][0], features["keypoints"], features["descriptors"].astype(np.uint8)
 
 
 def extract_job(job: Job) -> tuple[np.uint64, np.ndarray, np.ndarray]:
     dataset, image_id, kind, strength = job
     rng = np.random.default_rng(query_seed(kind, strength, image_id))
-    img = transform(load_image(image_path(dataset, image_id)), kind, strength, rng)
-    return phash(img), *sift_features(img)
+    return image_features(transform(source_image(image_path(dataset, image_id)), kind, strength, rng))
 
 
 def init_worker() -> None:

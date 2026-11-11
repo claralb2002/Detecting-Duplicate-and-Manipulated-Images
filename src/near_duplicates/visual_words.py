@@ -67,19 +67,24 @@ class VisualVocabulary:
         digest.update(json.dumps(self.metadata, sort_keys=True, allow_nan=False).encode())
         return digest.hexdigest()
 
-    def assign(self, descriptors: np.ndarray, *, batch_size: int = 512) -> np.ndarray:
-        """Exact nearest Euclidean center; bounded batch x vocabulary workspace."""
-        descriptors = descriptor_array(descriptors)
+    def assign(self, descriptors: np.ndarray, *, batch_size: int = 8192) -> np.ndarray:
+        """Exact nearest Euclidean center; bounded batch x vocabulary workspace.
+
+        Each batch is converted to float32 on its own, so millions of uint8 descriptors from a feature cache
+        never need a float32 copy, and the product uses every BLAS thread: the argmin does not depend on them.
+        """
+        descriptors = np.asarray(descriptors)
+        if descriptors.ndim != 2 or descriptors.shape[1] != 128:
+            raise ValueError("descriptors must be an N x 128 array")
         if type(batch_size) is not int or batch_size < 1:
             raise ValueError("batch_size must be positive")
         result = np.empty(len(descriptors), np.int32)
         norms = np.einsum("ij,ij->i", self.centers, self.centers)
-        with threadpool_limits(limits=1):
-            for start in range(0, len(descriptors), batch_size):
-                block = descriptors[start:start + batch_size]
-                # Query squared norms are constant across centers and cancel in argmin.
-                distances = norms[None, :] - 2 * block @ self.centers.T
-                result[start:start + len(block)] = np.argmin(distances, axis=1)
+        for start in range(0, len(descriptors), batch_size):
+            block = descriptor_array(descriptors[start:start + batch_size])
+            # Query squared norms are constant across centers and cancel in argmin.
+            distances = norms[None, :] - 2 * block @ self.centers.T
+            result[start:start + len(block)] = np.argmin(distances, axis=1)
         return result
 
     def words(self, descriptors: np.ndarray) -> np.ndarray:
@@ -96,7 +101,7 @@ class VisualVocabulary:
 
 
 def fit_vocabulary(descriptors: np.ndarray, size: int, *, seed: int = 2807, training_identity: str = "",
-                   batch_size: int = 2048, max_iter: int = 100) -> VisualVocabulary:
+                   batch_size: int = 2048, max_iter: int = 100, diagnostic_size: int = 5000) -> VisualVocabulary:
     descriptors = descriptor_array(descriptors)
     if type(size) is not int or not 2 <= size <= len(descriptors):
         raise ValueError("vocabulary size must be between 2 and the number of sampled descriptors")
@@ -104,8 +109,9 @@ def fit_vocabulary(descriptors: np.ndarray, size: int, *, seed: int = 2807, trai
                             max_iter=max_iter, n_init=3, max_no_improvement=10, reassignment_ratio=0.01)
     with threadpool_limits(limits=1):
         model.fit(descriptors)
-    # Internal compactness diagnostic on a seeded bounded sample, not retrieval quality.
-    rows = np.random.default_rng(seed).choice(len(descriptors), min(5000, len(descriptors)), replace=False)
+    # Internal compactness diagnostic on a seeded bounded sample, not retrieval quality; with many words the
+    # sample must hold many descriptors per word, or most clusters are singletons and the index is meaningless.
+    rows = np.random.default_rng(seed).choice(len(descriptors), min(diagnostic_size, len(descriptors)), replace=False)
     with threadpool_limits(limits=1):
         labels = model.predict(descriptors[rows])
     occupied = len(np.unique(labels))

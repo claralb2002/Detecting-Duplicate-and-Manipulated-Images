@@ -29,11 +29,11 @@ import scipy.sparse as sp
 from scipy.sparse.csgraph import connected_components
 from sklearn.metrics import adjusted_rand_score
 
-from near_duplicates.datasets import DATA_DIR, REPO_ROOT, load_split
-from near_duplicates.features import Job, cached_features, init_worker
+from near_duplicates.datasets import REPO_ROOT, load_split
+from near_duplicates.features import cache_dir, Job, cached_features, init_worker
 from near_duplicates.run import index_subset
 from near_duplicates.systems import PhashSystem, VisualWordSystem
-from near_duplicates.verification import pair_inliers
+from near_duplicates.spatial import pair_inliers
 from near_duplicates.vocabulary import fitted_vocabulary
 
 # Realistic re-upload edits that at least one of the two systems survives at the validation thresholds.
@@ -145,11 +145,11 @@ def main() -> None:
     positions = index_subset(full_index, set(), args.index_size, args.seed)
     index_ids = [full_index[i] for i in positions]
     jobs, labels = plant(index_ids, args.groups, args.copies, args.dataset, args.seed)
-    cache = DATA_DIR / "cache" / args.dataset
+    cache = cache_dir(args.dataset)
     with Pool(args.workers, initializer=init_worker) as pool:
         full = cached_features(cache / f"index_n{len(full_index)}.npz",
                                [(args.dataset, i, "clean", 0) for i in full_index], pool, "index")
-        centers = fitted_vocabulary(args.dataset, full.ids, full.descriptors, args.vocabulary, args.seed)
+        vocabulary = fitted_vocabulary(args.dataset, full.ids, full.descriptors, args.vocabulary, args.seed)
         copies = cached_features(cache / "dedup" / f"copies_n{len(index_ids)}_g{args.groups}_c{args.copies}_s{args.seed}.npz",
                                  jobs, pool, "copies")
     index = full.subset(positions)
@@ -158,7 +158,7 @@ def main() -> None:
     print(f"{len(catalogue.ids):,} catalogue images, {args.groups} planted groups of {args.copies + 1}", file=sys.stderr)
 
     phash = PhashSystem(catalogue.hashes, args.bit_bands, args.bit_rows, seed=args.seed)
-    words = VisualWordSystem(catalogue.descriptors, centers, args.num_perm, args.minhash_bands, args.minhash_rows, seed=args.seed)
+    words = VisualWordSystem(catalogue.descriptors, vocabulary, args.num_perm, args.minhash_bands, args.minhash_rows, seed=args.seed)
     union = [tuple(map(float, pair.split(":"))) for pair in args.union]
     phash_edges = self_join(phash, catalogue.hashes, lambda s: 1 + s / 64, 1 - max(args.hamming + [h for h, _ in union]) / 64)
     word_edges = self_join(words, words.encode(catalogue), lambda s: s, min(args.jaccard + [j for _, j in union]))

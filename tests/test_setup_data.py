@@ -1,4 +1,4 @@
-"""Synthetic checks for preprocessing, cache invalidation and split isolation."""
+"""Synthetic checks for preprocessing, the dataset audit and split isolation."""
 
 from pathlib import Path
 import tempfile
@@ -8,11 +8,8 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-from near_duplicates.cache import FeatureCache
 from near_duplicates.datasets import dev_ground_truth, fit_image_ids
-from near_duplicates.preprocessing import (
-    PHASH_PREPROCESS, PreprocessConfig, iter_batches, load_image,
-)
+from near_duplicates.preprocessing import PHASH_PREPROCESS, PreprocessConfig, load_image
 from near_duplicates.validate import validate_dataset
 
 
@@ -46,52 +43,6 @@ class SetupDataTests(unittest.TestCase):
         self.source.write_bytes(b"broken image")
         with self.assertRaisesRegex(ValueError, "source.png"):
             load_image(self.source)
-
-    def test_batch_order_and_final_partial_batch(self):
-        with patch("near_duplicates.preprocessing.load_split", return_value=["a", "b", "c"]), \
-             patch("near_duplicates.preprocessing.image_path", return_value=self.source):
-            batches = list(iter_batches("caltech101", "index", batch_size=2))
-            self.assertEqual([[i for i, _ in batch] for batch in batches], [["a", "b"], ["c"]])
-            with self.assertRaises(ValueError):
-                list(iter_batches("caltech101", "index", batch_size=0))
-
-    def test_cache_hit_invalidation_and_repair(self):
-        cache = FeatureCache(self.root / "cache")
-        calls = []
-
-        def compute(pixels):
-            calls.append(1)
-            return {"values": pixels, "empty_descriptors": np.empty((0, 128), dtype=np.float32)}
-
-        def get(config=PHASH_PREPROCESS, parameters=None):
-            return cache.get_or_compute("caltech101", "id", config, "test-v1", parameters or {}, compute)
-
-        with patch("near_duplicates.cache.image_path", return_value=self.source):
-            first = get()
-            np.testing.assert_array_equal(first["values"], get()["values"])
-            self.assertEqual(len(calls), 1)
-            self.assertEqual(get()["empty_descriptors"].shape, (0, 128))
-            target = next((self.root / "cache").rglob("*.npz"))
-            target.write_bytes(b"interrupted")
-            get()
-            self.assertEqual(len(calls), 2)
-            with target.open("wb") as handle:
-                np.save(handle, np.zeros(1))  # Valid NPY, but not the expected NPZ archive.
-            get()
-            self.assertEqual(len(calls), 3)
-            get(PreprocessConfig(square_size=16))
-            get(parameters={"extractor_version": 2})
-            Image.new("RGB", (80, 40), "blue").save(self.source)
-            get()
-            self.assertEqual(len(calls), 6)
-
-    def test_cache_rejects_object_arrays(self):
-        with patch("near_duplicates.cache.image_path", return_value=self.source):
-            with self.assertRaises(ValueError):
-                FeatureCache(self.root / "cache").get_or_compute(
-                    "caltech101", "id", PHASH_PREPROCESS, "test", {},
-                    lambda pixels: {"unsafe": np.array([{}], dtype=object)},
-                )
 
     def test_fitting_pool_excludes_evaluation_sources(self):
         splits = {"index": ["a", "b", "c", "d"], "val_targets": ["b"], "test_targets": ["c"]}

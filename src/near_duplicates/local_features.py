@@ -1,19 +1,15 @@
-"""Resumable joint pHash/SIFT extraction from one decoded RGB source."""
+"""Joint pHash/SIFT extraction from one decoded RGB source."""
 
 from dataclasses import asdict, dataclass
-import hashlib
 import json
 import os
 from pathlib import Path
 import tempfile
-from collections.abc import Callable, Sequence
 
 import cv2
 import numpy as np
 from PIL import Image
 
-from near_duplicates.cache import FeatureCache
-from near_duplicates.datasets import image_path
 from near_duplicates.phash import PHASH_PARAMETERS, phash
 from near_duplicates.preprocessing import PHASH_PREPROCESS, PreprocessConfig, preprocess_image
 
@@ -68,31 +64,6 @@ def extract_local_features(rgb: np.ndarray, config: SIFTConfig = SIFTConfig()) -
     }
 
 
-class LocalFeatureStore:
-    """Numeric per-source caches; changing pixels or extractor settings invalidates them."""
-
-    def __init__(self, dataset: str, config: SIFTConfig = SIFTConfig(), cache: FeatureCache | None = None):
-        self.dataset, self.config = dataset, config
-        self.cache = cache if cache is not None else FeatureCache()
-
-    def get(self, image_id: str) -> dict[str, np.ndarray]:
-        return self.cache.get_or_compute(self.dataset, image_id, RGB_SOURCE, "joint-phash-sift",
-                                         self.config.parameters, lambda rgb: extract_local_features(rgb, self.config))
-
-    def transformed(self, image_id: str, transform: dict, compute_rgb: Callable[[], np.ndarray]) -> dict[str, np.ndarray]:
-        return self.cache.get_or_compute_derived(
-            self.dataset, image_id, RGB_SOURCE, "joint-phash-sift-query",
-            {**self.config.parameters, "transform": transform},
-            lambda: extract_local_features(compute_rgb(), self.config),
-        )
-
-    def fingerprint(self, image_ids: Sequence[str]) -> str:
-        digest = hashlib.sha256(json.dumps(self.config.parameters, sort_keys=True).encode())
-        for image_id in image_ids:
-            digest.update(image_id.encode() + b"\0")
-            digest.update(hashlib.sha256(image_path(self.dataset, image_id).read_bytes()).digest())
-        return digest.hexdigest()
-
 
 def save_arrays(path: str | Path, metadata: dict, **arrays: np.ndarray) -> None:
     """Atomically persist a numeric artifact with JSON metadata; no pickle/joblib."""
@@ -107,18 +78,3 @@ def save_arrays(path: str | Path, metadata: dict, **arrays: np.ndarray) -> None:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
-
-
-def export_feature_bundle(path: str | Path, image_ids: Sequence[str], get_features: Callable[[str], dict]) -> None:
-    """Export a bounded shard in the gameplan's hashes/descriptors/offsets layout.
-
-    Use shards for large datasets: this convenience exporter holds one shard in
-    memory. Retrieval keeps only words/signatures and loads descriptors lazily.
-    """
-    features = [get_features(i) for i in image_ids]
-    counts = [len(f["descriptors"]) for f in features]
-    save_arrays(path, {"image_ids": list(image_ids), "schema": 1},
-                hashes=np.concatenate([f["hashes"] for f in features]) if features else np.empty(0, np.uint64),
-                descriptors=np.concatenate([f["descriptors"] for f in features]) if features else np.empty((0, 128), np.float32),
-                keypoints=np.concatenate([f["keypoints"] for f in features]) if features else np.empty((0, 2), np.float32),
-                offsets=np.array([0, *np.cumsum(counts)], dtype=np.int64))

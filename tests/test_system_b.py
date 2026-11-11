@@ -1,24 +1,19 @@
-"""System B checks: real SIFT, set/minwise mathematics and robust geometry."""
+"""System B checks: real SIFT, vocabularies, minwise mathematics, banding and robust geometry."""
 
 import itertools
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 
 import cv2
 import numpy as np
 
-from near_duplicates.cache import FeatureCache
-from near_duplicates.local_features import LocalFeatureStore, SIFTConfig, extract_local_features, export_feature_bundle
-from near_duplicates.local_queries import QuerySpec, prepare_validation_queries
-from near_duplicates.minhash import EMPTY, MinHasher, MinHashLSH, candidate_probability, containment, estimated_jaccard, jaccard
+from near_duplicates.local_features import SIFTConfig, extract_local_features
+from near_duplicates.lsh import BandIndex, band_keys, s_curve
+from near_duplicates.minhash import EMPTY, MinHasher
 from near_duplicates.phash import phash
-from near_duplicates.preprocessing import PHASH_PREPROCESS, SIFT_PREPROCESS, load_image, preprocess_image
-from near_duplicates.retrieval_metrics import retrieval_metrics, wilson_interval
-from near_duplicates.spatial import SpatialConfig, SpatialResult, verify_spatial
-from near_duplicates.system_b import CSV_FIELDS, select_parameters, select_spatial, sweep_words
-from near_duplicates.visual_index import VisualWordIndex
+from near_duplicates.preprocessing import PHASH_PREPROCESS, SIFT_PREPROCESS, preprocess_image
+from near_duplicates.spatial import SpatialConfig, accepted_inliers, verify_spatial
 from near_duplicates.visual_words import VisualVocabulary, fit_vocabulary, sample_descriptors
 from PIL import Image
 
@@ -57,57 +52,6 @@ class LocalFeaturesTests(unittest.TestCase):
                 extract_local_features(image)
         with self.assertRaises(ValueError):
             SIFTConfig(max_features=0)
-
-    def test_joint_cache_decodes_once_and_invalidates_changed_source(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "source.png"
-            Image.fromarray(texture()).save(path)
-            cache = FeatureCache(Path(folder) / "cache")
-            store = LocalFeatureStore("caltech101", cache=cache)
-            with patch("near_duplicates.cache.image_path", return_value=path), \
-                 patch("near_duplicates.cache.load_image", wraps=load_image) as decode:
-                first = store.get("id")
-                second = store.get("id")
-                self.assertEqual(decode.call_count, 1)
-                np.testing.assert_array_equal(first["descriptors"], second["descriptors"])
-                Image.new("RGB", (100, 100)).save(path)
-                self.assertEqual(len(store.get("id")["descriptors"]), 0)
-                self.assertEqual(decode.call_count, 2)
-
-    def test_validation_sources_only_and_one_decode_for_all_transforms(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "source.png"
-            Image.fromarray(texture()).save(path)
-            store = LocalFeatureStore("caltech101", cache=FeatureCache(Path(folder) / "cache"))
-            seen = []
-
-            def split(dataset, name):
-                seen.append(name)
-                self.assertIn(name, ("val_targets", "val_distractors"))
-                return [name]
-
-            with patch("near_duplicates.local_queries.load_split", side_effect=split), \
-                 patch("near_duplicates.local_queries.image_path", return_value=path), \
-                 patch("near_duplicates.cache.image_path", return_value=path), \
-                 patch("near_duplicates.local_queries.load_image", wraps=load_image) as decode:
-                queries = prepare_validation_queries(store)
-                self.assertEqual(decode.call_count, 2)
-                repeat = prepare_validation_queries(store)
-                self.assertEqual(decode.call_count, 2)
-            self.assertEqual([q.identity for q in queries], [q.identity for q in repeat])
-            self.assertEqual(len(queries), 10)
-            self.assertTrue(all(q.true_id is None for q in queries[5:]))
-
-    def test_feature_bundle_offsets_and_no_pickle(self):
-        features = extract_local_features(texture(), SIFTConfig(max_features=12))
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "bundle.npz"
-            export_feature_bundle(path, ["a", "b"], lambda image_id: features)
-            with np.load(path, allow_pickle=False) as stored:
-                np.testing.assert_array_equal(stored["offsets"], [0, 12, 24])
-                self.assertEqual(stored["descriptors"].shape, (24, 128))
-                self.assertEqual(stored["hashes"].shape, (2,))
-
 
 class VocabularyTests(unittest.TestCase):
     def test_assignment_matches_brute_force_and_sets_remove_counts(self):
@@ -149,13 +93,6 @@ class VocabularyTests(unittest.TestCase):
 
 
 class MinHashTests(unittest.TestCase):
-    def test_set_similarities_empty_and_directional_containment(self):
-        self.assertAlmostEqual(jaccard([1, 1, 2], [2, 3]), 1/3)
-        self.assertEqual(containment([1, 2], [0, 1, 2, 3]), 1)
-        self.assertEqual(containment([0, 1, 2, 3], [1, 2]), 0.5)
-        self.assertEqual(jaccard([], []), 0)
-        self.assertEqual(containment([], [1]), 0)
-
     def test_minwise_identity_by_enumerating_every_permutation(self):
         # Exact combinatorial reference, not a probabilistic tolerance test.
         a, b = [0, 1], [1, 2]
@@ -163,21 +100,20 @@ class MinHashTests(unittest.TestCase):
         permutations = list(itertools.permutations(range(4)))
         for ranks in permutations:
             collisions += min(ranks[i] for i in a) == min(ranks[i] for i in b)
-        self.assertEqual(collisions / len(permutations), jaccard(a, b))
+        self.assertEqual(collisions / len(permutations), 1/3)  # Jaccard of {0, 1} and {1, 2}
         hasher = MinHasher(4, num_perm=2000, seed=1)
-        self.assertAlmostEqual(estimated_jaccard(hasher.signature(a), hasher.signature(b)), 1/3, delta=0.04)
+        self.assertAlmostEqual(np.mean(hasher.signature(a) == hasher.signature(b)), 1/3, delta=0.04)
         np.testing.assert_array_equal(hasher.signature([0, 1, 1]), hasher.ranks[:, [0, 1]].min(axis=1))
         np.testing.assert_array_equal(hasher.ranks, MinHasher(4, num_perm=2000, seed=1).ranks)
         self.assertEqual(hasher.transform([]).shape, (0, 2000))
 
     def test_banding_candidate_union_and_empty_signatures(self):
-        signatures = np.array([[1, 2, 3, 4], [1, 2, 9, 9], [8, 8, 3, 4], [7, 7, 7, 7], [EMPTY]*4], np.uint32)
-        lsh = MinHashLSH(signatures, ["a", "b", "c", "d", "empty"], b=2, r=2)
-        np.testing.assert_array_equal(lsh.candidates(signatures[0]), [0, 1, 2])
-        self.assertEqual(lsh.candidates(np.full(4, EMPTY, np.uint32)).size, 0)
-        self.assertEqual(estimated_jaccard(signatures[-1], signatures[-1]), 0)
+        signatures = np.array([[1, 2, 3, 4], [1, 2, 9, 9], [8, 8, 3, 4], [7, 7, 7, 7]], np.uint32)
+        index = BandIndex(band_keys(signatures, 2, 2))
+        np.testing.assert_array_equal(index.candidates(band_keys(signatures[:1], 2, 2)[0]), [0, 1, 2])
+        np.testing.assert_array_equal(MinHasher(4, num_perm=3).signature([]), [EMPTY] * 3)
         with self.assertRaises(ValueError):
-            MinHashLSH(signatures, ["a", "b", "c", "d", "e"], b=3, r=2)
+            band_keys(signatures, 3, 2)
         with self.assertRaises(ValueError):
             MinHasher(4).signature([4])
 
@@ -185,12 +121,11 @@ class MinHashTests(unittest.TestCase):
         hits = 0
         for seed in range(500):
             hasher = MinHasher(8, num_perm=8, seed=seed)
-            signatures = hasher.transform([[0, 1, 2], [1, 2, 3]])
-            index = MinHashLSH(signatures[:1], ["a"], b=4, r=2)
-            hits += len(index.candidates(signatures[1])) > 0
-        self.assertAlmostEqual(hits / 500, candidate_probability(0.5, 4, 2), delta=0.06)
-        self.assertEqual(candidate_probability(0, 4, 2), 0)
-        self.assertEqual(candidate_probability(1, 4, 2), 1)
+            keys = band_keys(hasher.transform([[0, 1, 2], [1, 2, 3]]), 4, 2)
+            hits += len(BandIndex(keys[:1]).candidates(keys[1])) > 0
+        self.assertAlmostEqual(hits / 500, s_curve(0.5, 4, 2), delta=0.06)
+        self.assertEqual(s_curve(0, 4, 2), 0)
+        self.assertEqual(s_curve(1, 4, 2), 1)
 
 
 class GeometryAndRetrievalTests(unittest.TestCase):
@@ -218,6 +153,9 @@ class GeometryAndRetrievalTests(unittest.TestCase):
         self.assertTrue(verify_spatial(first, second).accepted)
         blank = extract_local_features(np.zeros_like(rgb))
         self.assertFalse(verify_spatial(first, blank).accepted)
+        self.assertEqual(accepted_inliers(first["keypoints"], blank["keypoints"], first["descriptors"], blank["descriptors"]), 0)
+        self.assertEqual(accepted_inliers(first["keypoints"], second["keypoints"], first["descriptors"], second["descriptors"]),
+                         verify_spatial(first, second).inliers)
 
     def test_repeated_keypoint_orientations_do_not_get_extra_geometric_votes(self):
         points = np.repeat(np.array([[0, 0], [50, 0], [0, 50]], np.float32), 2, axis=0)
@@ -226,61 +164,6 @@ class GeometryAndRetrievalTests(unittest.TestCase):
         result = verify_spatial(features, features, SpatialConfig(min_inliers=4))
         self.assertFalse(result.accepted)
         self.assertEqual(result.matches, 3)
-
-    def test_index_scores_verification_empty_and_deterministic_ties(self):
-        sets, ids = [[0, 1], [0, 1], [0, 1, 2, 3], []], ["z", "a", "large", "blank"]
-        index = VisualWordIndex(sets, ids, MinHasher(5), b=64, r=2)
-        np.testing.assert_allclose(index.scores([0, 1]), [1, 1, .5, 0])
-        np.testing.assert_allclose(index.scores([0, 1], metric="containment"), [1, 1, 1, 0])
-        result = index.query([0, 1], threshold=0.9, top_k=3)
-        self.assertEqual([m.image_id for m in result.matches], ["a", "z"])
-        self.assertEqual(index.query([], exhaustive=True).matches, ())
-        self.assertEqual(index.query([4], exhaustive=True).matches, ())
-
-    def test_spatial_reranking_rejects_visual_word_collision(self):
-        good = extract_local_features(texture())
-        bad = extract_local_features(np.zeros((220, 300, 3), np.uint8))
-        index = VisualWordIndex([[0, 1], [0, 1]], ["a_bad", "z_good"], MinHasher(4), b=64, r=2)
-        self.assertEqual(index.query([0, 1]).matches[0].image_id, "a_bad")
-        result = index.query([0, 1], query_features=good, reference_features={"a_bad": bad, "z_good": good}.__getitem__,
-                             spatial=SpatialConfig(), rerank_depth=2)
-        self.assertEqual(result.matches[0].image_id, "z_good")
-        self.assertGreaterEqual(result.matches[0].inliers, 6)
-
-    def test_sweep_known_answers_and_cost_aware_selection(self):
-        queries = [QuerySpec("a", "a", "probe", 1, 1), QuerySpec("outside", None, "probe", 1, 1)]
-        rows, curves = sweep_words([[0, 1], [2, 3]], [[0, 1], [4]], ["a", "b"], queries,
-                                   MinHasher(5, num_perm=4), bands=((2, 2),), thresholds=(0.1, 0.5))
-        self.assertTrue(all(row["f1"] == 1 for row in rows))
-        self.assertTrue(curves)
-        base = {"vocabulary_size": 4, "b": 2, "r": 2, "metric": "jaccard", "threshold": .5,
-                "recall_at_1": .9, "precision": .9, "seed": 1}
-        sweep = [{**base, "f1": .9, "mean_candidates": 100},
-                 {**base, "b": 1, "r": 4, "f1": .897, "mean_candidates": 10}]
-        self.assertEqual(select_parameters(sweep)["mean_candidates"], 10)
-        self.assertEqual(select_parameters(sweep, f1_tolerance=0)["mean_candidates"], 100)
-        self.assertEqual(CSV_FIELDS[:11], ("system", "mode", "kind", "strength", "true_id", "predicted", "score",
-                                         "candidates", "true_is_candidate", "true_similarity", "lsh_seconds"))
-
-    def test_wrong_source_counts_as_both_error_types_and_wilson_interval(self):
-        metrics = retrieval_metrics(np.array([1, -1, 0]), np.array([0, 1, -1]))
-        self.assertEqual((metrics["false_positives"], metrics["false_negatives"]), (2, 2))
-        low, high = wilson_interval(250, 500)
-        self.assertLess(low, .5)
-        self.assertGreater(high, .5)
-        self.assertIsNone(wilson_interval(0, 0))
-
-    def test_spatial_calibration_can_accept_low_word_overlap(self):
-        valid = SpatialResult(True, 12, 12, 1.0, np.eye(3))
-        accidental = SpatialResult(True, 12, 4, 1/3, np.eye(3))
-        records = [{"query": 0, "mode": "lsh", "checks": [(0, 0.1, valid)]},
-                   {"query": 1, "mode": "lsh", "checks": [(0, 0.3, accidental)]}]
-        selected, sweep = select_spatial({2807: (records, np.array([0, -1]))})
-        self.assertEqual(selected["mean_f1"], 1.0)
-        self.assertLessEqual(selected["threshold"], 0.1)
-        self.assertGreater(selected["min_inliers"], 4)
-        self.assertEqual(len(sweep), 36)
-
 
 if __name__ == "__main__":
     unittest.main()

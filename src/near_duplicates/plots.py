@@ -11,7 +11,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from near_duplicates.lsh import CODE_BITS, bit_sampling_curve, s_curve
+from near_duplicates.lsh import bit_sampling_curve, s_curve
+from near_duplicates.phash import HASH_BITS
 
 STYLES = {
     ("phash", "lsh"): ("C0", "-"), ("phash", "exhaustive"): ("C0", "--"),
@@ -52,8 +53,8 @@ def plot_s_curves(results: pd.DataFrame, bit_bands: int, bit_rows: int, minhash_
     lsh_targets = results[(results["mode"] == "lsh") & (results.true_id != "")]
     fig, axes = plt.subplots(1, 2, figsize=(11, 4))
     grid = np.linspace(0, 1, 201)
-    distances = np.arange(CODE_BITS + 1)
-    axes[0].plot(1 - distances / CODE_BITS, bit_sampling_curve(distances, bit_bands, bit_rows), "k-",
+    distances = np.arange(HASH_BITS + 1)
+    axes[0].plot(1 - distances / HASH_BITS, bit_sampling_curve(distances, bit_bands, bit_rows), "k-",
                  label=f"exact, b={bit_bands}, r={bit_rows}")
     axes[0].plot(grid, s_curve(grid, bit_bands, bit_rows), "k:", label="(1 - d/64)^r approximation")
     axes[1].plot(grid, s_curve(grid, minhash_bands, minhash_rows), "k-", label=f"theory, b={minhash_bands}, r={minhash_rows}")

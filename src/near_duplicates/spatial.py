@@ -1,5 +1,6 @@
 """SIFT ratio-test correspondences and RANSAC homography verification."""
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import cv2
@@ -78,3 +79,26 @@ def verify_spatial(query: dict, reference: dict, config: SpatialConfig = Spatial
     ratio = inliers / len(good)
     return SpatialResult(inliers >= config.min_inliers and ratio >= config.min_inlier_ratio,
                           len(good), inliers, ratio, matrix)
+
+
+def accepted_inliers(query_keypoints: np.ndarray, reference_keypoints: np.ndarray, query_descriptors: np.ndarray,
+                     reference_descriptors: np.ndarray, config: SpatialConfig = SpatialConfig()) -> int:
+    """The inliers of an accepted homography, else 0: the score spatial verification ranks and thresholds."""
+    result = verify_spatial({"keypoints": query_keypoints, "descriptors": query_descriptors},
+                            {"keypoints": reference_keypoints, "descriptors": reference_descriptors}, config)
+    return result.inliers if result.accepted else 0
+
+
+def pair_inliers(i: np.ndarray, j: np.ndarray, keypoints: list[np.ndarray], descriptors: list[np.ndarray],
+                 workers: int) -> np.ndarray:
+    """`accepted_inliers` for every pair (i[n], j[n]) of images in one collection, on `workers` threads.
+
+    OpenCV releases the GIL inside matching and RANSAC, and its random generator is per thread, so threads
+    share the descriptors without copying them and every count equals a sequential call's.
+    """
+    def count(pair: tuple[int, int]) -> int:
+        a, b = pair
+        return accepted_inliers(keypoints[a], keypoints[b], descriptors[a], descriptors[b])
+
+    with ThreadPoolExecutor(workers) as pool:
+        return np.fromiter(pool.map(count, zip(i.tolist(), j.tolist())), dtype=np.int64, count=len(i))

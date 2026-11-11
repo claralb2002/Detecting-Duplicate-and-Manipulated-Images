@@ -30,8 +30,8 @@ from multiprocessing import Pool
 import numpy as np
 import pandas as pd
 
-from near_duplicates.datasets import DATA_DIR, REPO_ROOT, dev_ground_truth, load_split
-from near_duplicates.features import cached_features, init_worker
+from near_duplicates.datasets import REPO_ROOT, dev_ground_truth, load_split
+from near_duplicates.features import cache_dir, cached_features, init_worker
 from near_duplicates.metrics import RESULT_COLUMNS, calibrate, pooled_rates, retrieval_scores, summarize
 from near_duplicates.plots import plot_recall, plot_s_curves
 from near_duplicates.systems import ContainmentSystem, PhashSystem, SpatiallyVerifiedSystem, VisualWordSystem, search
@@ -112,7 +112,7 @@ def main() -> None:
     full_index = load_split(args.dataset, "index")
     scale = load_split(args.dataset, "scale") if args.scale else []
     sets = query_sets(args)
-    cache = DATA_DIR / "cache" / args.dataset
+    cache = cache_dir(args.dataset)
     positions = index_subset(full_index + scale, {t for s in sets for t in s.true_ids if t}, args.index_size, args.seed)
     print(f"{len(positions):,} of {len(full_index) + len(scale):,} indexed images, {len(sets)} query sets "
           f"of {len(sets[0].query_ids):,} queries", file=sys.stderr)
@@ -120,12 +120,12 @@ def main() -> None:
     with Pool(args.workers, initializer=init_worker) as pool:
         full = cached_features(cache / f"index_n{len(full_index)}.npz",
                                [(args.dataset, i, "clean", 0) for i in full_index], pool, "index")
-        centers = fitted_vocabulary(args.dataset, full.ids, full.descriptors, args.vocabulary, args.seed)
+        vocabulary = fitted_vocabulary(args.dataset, full.ids, full.descriptors, args.vocabulary, args.seed)
         if scale:
             full = full.concatenate(cached_features(cache / f"scale_n{len(scale)}.npz",
                                                     [(args.dataset, i, "clean", 0) for i in scale], pool, "scale"))
         index = full.subset(positions)
-        words = VisualWordSystem(index.descriptors, centers, args.num_perm, args.minhash_bands, args.minhash_rows, seed=args.seed)
+        words = VisualWordSystem(index.descriptors, vocabulary, args.num_perm, args.minhash_bands, args.minhash_rows, seed=args.seed)
         systems = [
             PhashSystem(index.hashes, args.bit_bands, args.bit_rows, seed=args.seed),
             words,

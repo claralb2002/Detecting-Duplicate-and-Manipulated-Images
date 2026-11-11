@@ -3,7 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from near_duplicates.lsh import BandIndex, BitSampler, MinHasher, band_keys, bit_sampling_curve, s_curve
+from near_duplicates.lsh import BandIndex, BitSampler, band_keys, bit_sampling_curve, s_curve
+from near_duplicates.minhash import MinHasher
 from near_duplicates.tune import JACCARD_VALUES, hamming_profile, jaccard_bins, jaccard_profile
 from near_duplicates.vocabulary import incidence
 
@@ -45,9 +46,9 @@ def test_predicted_minhash_candidate_fraction_matches_a_real_band_index():
     bands, rows = 20, 3
     measured = []
     for seed in range(5):
-        hasher = MinHasher(bands * rows, seed=seed)
-        index = BandIndex(band_keys(hasher.signatures(index_sets), bands, rows, seed=seed))
-        keys = band_keys(hasher.signatures(query_sets), bands, rows, seed=seed)
+        hasher = MinHasher(500, num_perm=bands * rows, seed=seed)
+        index = BandIndex(band_keys(hasher.transform(index_sets), bands, rows, seed=seed))
+        keys = band_keys(hasher.transform(query_sets), bands, rows, seed=seed)
         measured.append(np.mean([len(index.candidates(k)) for k in keys]) / len(index_sets))
     predicted = profile.candidate_fraction(lambda s: s_curve(s, bands, rows))
     assert 0.05 < predicted < 0.95

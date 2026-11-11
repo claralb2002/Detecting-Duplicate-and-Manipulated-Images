@@ -6,15 +6,12 @@ This matches ImageHash's default pHash on the same preprocessed pixels; it is
 not a claim of compatibility with every algorithm called pHash.
 """
 
-from pathlib import Path
 from collections.abc import Sequence
 
 import numpy as np
 import scipy
 from scipy.fft import dctn
 
-from near_duplicates.cache import FeatureCache
-from near_duplicates.preprocessing import PHASH_PREPROCESS, load_image
 
 HASH_BITS = 64
 PHASH_PARAMETERS = {
@@ -33,23 +30,6 @@ def phash(pixels: np.ndarray) -> np.uint64:
     bits = (low > np.median(low)).ravel()
     return np.uint64(int.from_bytes(np.packbits(bits, bitorder="big").tobytes(), "big"))
 
-
-def hash_image(path: str | Path) -> np.uint64:
-    """Use identical EXIF, alpha, grayscale and resize handling for all images."""
-    return phash(load_image(path, PHASH_PREPROCESS))
-
-
-def hash_split(dataset: str, image_ids: Sequence[str], cache: FeatureCache | None = None) -> np.ndarray:
-    """Return cached uint64 hashes in image_ids order, including for empty inputs."""
-    cache = cache if cache is not None else FeatureCache()
-    result = np.empty(len(image_ids), dtype=np.uint64)
-    for i, image_id in enumerate(image_ids):
-        arrays = cache.get_or_compute(
-            dataset, image_id, PHASH_PREPROCESS, "phash", PHASH_PARAMETERS,
-            lambda pixels: {"hash": np.array([phash(pixels)], dtype=np.uint64)},
-        )
-        result[i] = arrays["hash"].item()
-    return result
 
 
 def hash_value(value: int) -> int:
