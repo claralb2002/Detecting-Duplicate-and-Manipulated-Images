@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from near_duplicates.features import FeatureSet
 from near_duplicates.run import index_subset
-from near_duplicates.systems import PhashSystem, VisualWordSystem, search
+from near_duplicates.systems import ContainmentSystem, PhashSystem, VisualWordSystem, search
 from near_duplicates.vocabulary import incidence, nearest_word, word_sets
 
 
@@ -38,7 +39,8 @@ def test_search_finds_planted_duplicates_and_reports_true_similarity():
     ]
     # Query 0 is r7 with one hash bit flipped and its word set intact; query 1 is a random distractor.
     queries = FeatureSet(["q0", "q1"], np.array([hashes[7] ^ np.uint64(1), rng.integers(0, 2**64, dtype=np.uint64)]),
-                         [as_descriptors(words[7]), as_descriptors(rng.choice(256, size=30, replace=False))])
+                         [as_descriptors(words[7]), as_descriptors(rng.choice(256, size=30, replace=False))],
+                         [np.zeros((30, 2), np.float32)] * 2)
     rows = search(systems, index_ids, queries, ["r7", ""], "jpeg", 50)
     assert len(rows) == 2 * 2 * 2
     for r in rows:
@@ -56,11 +58,14 @@ def test_scoring_a_subset_equals_the_full_scores_at_those_positions():
     centers = rng.normal(size=(128, 128)).astype(np.float32) * 30 + 120
     descriptors = [np.clip(np.rint(centers[rng.choice(128, size=20)]), 0, 255).astype(np.uint8) for _ in range(300)]
     hashes = rng.integers(0, 2**64, size=300, dtype=np.uint64)
-    queries = FeatureSet(["q"], hashes[:1] ^ np.uint64(5), descriptors[:1])
+    queries = FeatureSet(["q"], hashes[:1] ^ np.uint64(5), descriptors[:1], [np.zeros((20, 2), np.float32)])
     positions = np.array([0, 17, 42, 299])
     for system in (PhashSystem(hashes, 16, 8, seed=0), VisualWordSystem(descriptors, centers, 64, 32, 2, seed=0)):
         encoded = system.encode(queries)
-        assert np.allclose(system.scores(encoded, 0, positions), system.scores(encoded, 0)[positions])
+        full = system.scores(encoded, 0)
+        assert np.allclose(system.scores(encoded, 0, positions), full[positions])
+        best = positions[np.argmax(full[positions])]
+        assert system.rank(encoded, 0, positions) == (best, full[best])  # positions map back to index positions
         assert system.memory_bytes() > system.index.nbytes
 
 
@@ -72,3 +77,33 @@ def test_index_subset_keeps_required_images_and_is_reproducible():
     assert required <= {ids[i] for i in positions}
     assert (positions == index_subset(ids, required, 100, seed=0)).all()
     assert len(index_subset(ids, required, None, seed=0)) == 1000
+
+
+def test_containment_scores_a_cropped_word_set_as_fully_contained_while_jaccard_falls():
+    rng = np.random.default_rng(3)
+    centers = rng.normal(size=(128, 128)).astype(np.float32) * 30 + 120
+    as_descriptors = lambda ws: np.clip(np.rint(centers[ws]), 0, 255).astype(np.uint8)
+    index_words = [rng.choice(128, size=40, replace=False) for _ in range(30)]
+    words = VisualWordSystem([as_descriptors(w) for w in index_words], centers, num_perm=64, bands=32, rows=2, seed=0)
+    containment = ContainmentSystem(words)
+    crop = word_sets([as_descriptors(index_words[5][:10])], centers)  # a quarter of image 5's words
+    assert containment.similarity(crop, 0, 5) == 1.0
+    assert words.similarity(crop, 0, 5) == 0.25
+    assert containment.rank(crop, 0)[0] == 5
+    other = int(np.setdiff1d(np.arange(30), [5])[0])
+    shared = len(np.intersect1d(index_words[other], index_words[5][:10]))
+    assert containment.scores(crop, 0)[other] == pytest.approx(shared / 10)
+
+
+def test_vocabulary_pool_holds_no_evaluation_source():
+    from near_duplicates.datasets import dev_ground_truth, fit_image_ids, load_split
+
+    for dataset in ("caltech101", "disc21"):
+        try:
+            pool = set(fit_image_ids(dataset))
+            evaluation = set(load_split(dataset, "val_targets")) | set(load_split(dataset, "test_targets"))
+            if dataset == "disc21":
+                evaluation |= set(dev_ground_truth().values())
+        except FileNotFoundError:
+            continue
+        assert pool and not pool & evaluation and pool <= set(load_split(dataset, "index"))

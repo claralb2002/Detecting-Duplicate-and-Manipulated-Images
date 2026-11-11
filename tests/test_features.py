@@ -7,7 +7,7 @@ from PIL import Image
 
 from conftest import textured_image
 from near_duplicates.features import (
-    MAX_SIDE, SIFT_FEATURES, FeatureSet, load_features, load_image, phash, save_features,
+    MAX_SIDE, SIFT_FEATURES, FeatureSet, load_features, load_image, phash, save_features, sift_features,
 )
 
 
@@ -47,22 +47,41 @@ def test_opencv_sift_descriptors_are_integers_in_byte_range(caltech_sample):
         assert np.array_equal(raw, np.rint(raw)) and raw.min() >= 0 and raw.max() <= 255
 
 
+def test_sift_keypoints_are_row_aligned_with_their_descriptors(caltech_sample):
+    """Padding the image shifts every keypoint by the padding, so a descriptor found again sits 40 pixels further."""
+    img = load_image(caltech_sample[0])
+    keypoints, descriptors = sift_features(img)
+    assert len(keypoints) == len(descriptors) > 0 and keypoints.dtype == np.float32
+    assert (keypoints >= 0).all() and (keypoints[:, 0] < img.width).all() and (keypoints[:, 1] < img.height).all()
+    padded = Image.new("RGB", (img.width + 80, img.height + 80), (127, 127, 127))
+    padded.paste(img, (40, 40))
+    moved, moved_descriptors = sift_features(padded)
+    distances = np.linalg.norm(descriptors[:, None].astype(float) - moved_descriptors[None].astype(float), axis=2)
+    nearest = distances.argmin(axis=1)
+    close = distances.min(axis=1) < 30  # descriptors found again, almost unchanged
+    assert close.sum() >= 20
+    assert np.median(np.abs(moved[nearest[close]] - keypoints[close] - 40)) < 1.0
+
+
 def feature_set(ids: list[str], seed: int) -> FeatureSet:
     rng = np.random.default_rng(seed)
     sizes = rng.integers(0, 5, size=len(ids))
     descriptors = [rng.integers(0, 256, size=(s, 128), dtype=np.uint8) for s in sizes]
-    return FeatureSet(ids, rng.integers(0, 2**64, size=len(ids), dtype=np.uint64), descriptors)
+    keypoints = [(rng.random((s, 2)) * 512).astype(np.float32) for s in sizes]
+    return FeatureSet(ids, rng.integers(0, 2**64, size=len(ids), dtype=np.uint64), descriptors, keypoints)
 
 
 def test_feature_cache_round_trip_keeps_image_alignment(tmp_path):
     ids = ["a/1.jpg", "b/2.jpg", "c/3.jpg", "d/4.jpg"]
     original = feature_set(ids, 0)
     original.descriptors[1] = np.zeros((0, 128), np.uint8)  # an image without keypoints must not shift the others
+    original.keypoints[1] = np.zeros((0, 2), np.float32)
     save_features(tmp_path / "f.npz", original)
     loaded = load_features(tmp_path / "f.npz", ids)
     assert loaded is not None and loaded.ids == ids
     assert (loaded.hashes == original.hashes).all()
     assert all(np.array_equal(a, b) for a, b in zip(loaded.descriptors, original.descriptors))
+    assert all(np.array_equal(a, b) for a, b in zip(loaded.keypoints, original.keypoints))
 
 
 def test_feature_cache_rejects_other_image_lists(tmp_path):

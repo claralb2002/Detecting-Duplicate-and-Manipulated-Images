@@ -16,6 +16,8 @@ from near_duplicates.lsh import CODE_BITS, bit_sampling_curve, s_curve
 STYLES = {
     ("phash", "lsh"): ("C0", "-"), ("phash", "exhaustive"): ("C0", "--"),
     ("visual-words", "lsh"): ("C1", "-"), ("visual-words", "exhaustive"): ("C1", "--"),
+    ("visual-words+ransac", "lsh"): ("C2", "-"), ("visual-words+ransac", "exhaustive"): ("C2", "--"),
+    ("visual-words-containment", "lsh"): ("C4", "-"), ("visual-words-containment", "exhaustive"): ("C4", "--"),
 }
 UNGRADED = ("clean", "flip")
 
@@ -64,6 +66,36 @@ def plot_s_curves(results: pd.DataFrame, bit_bands: int, bit_rows: int, minhash_
                    label="observed (size = count)", zorder=3)
         ax.set(title=system, xlabel=label, ylabel="P(true match is a candidate)", ylim=(-0.02, 1.02))
         ax.legend(fontsize=7)
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+
+
+COMBINATION_STYLES = {"cascade": ("C3", "-"), "fusion": ("C4", "--"), "either": ("k", ":")}
+
+
+def plot_combinations(per_condition: pd.DataFrame, path: Path) -> None:
+    """Recall at the common false-match rate against strength for each system alone and each combination."""
+    kinds = [k for k in dict.fromkeys(per_condition.kind) if k not in UNGRADED]
+    columns, rows = 3, -(-(len(kinds) + 1) // 3)
+    fig, axes = plt.subplots(rows, columns, figsize=(13, 3.4 * rows), squeeze=False)
+    for ax, kind in zip(axes.flat, kinds):
+        styles = {m: COMBINATION_STYLES.get(m, (STYLES.get((m, "lsh"), ("C5", "-"))[0], "-")) for m in dict.fromkeys(per_condition.method)}
+        for method, (color, line) in styles.items():
+            part = per_condition[(per_condition.kind == kind) & (per_condition.method == method)].sort_values("strength")
+            x = part.strength.astype(float)
+            ax.plot(x, part.recall, color=color, linestyle=line, marker="o", markersize=3, label=method)
+            if method != "either":
+                ax.fill_between(x, part.recall_low, part.recall_high, color=color, alpha=0.1, linewidth=0)
+        ax.set(title=kind, ylim=(0, 1.02), xlabel="strength", ylabel="recall at threshold")
+    axes.flat[0].legend(fontsize=7)
+    table_ax = axes.flat[len(kinds)]
+    table_ax.axis("off")
+    ungraded = per_condition[per_condition.kind.isin(UNGRADED)].pivot_table(index="kind", columns="method", values="recall")
+    if not ungraded.empty:
+        table_ax.table(cellText=ungraded.round(2).values, rowLabels=ungraded.index, colLabels=ungraded.columns, loc="center")
+    for ax in axes.flat[len(kinds) + 1 :]:
+        ax.axis("off")
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)

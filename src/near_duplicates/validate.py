@@ -6,7 +6,7 @@ import re
 
 from near_duplicates.datasets import (
     DATASETS, SPLIT_NAMES, CALTECH_EXCLUDED_CATEGORIES, dev_ground_truth,
-    fit_image_ids, image_path, load_split,
+    fit_image_ids, image_path, load_split, split_exists,
 )
 from near_duplicates.preprocessing import load_image, PreprocessConfig
 
@@ -16,13 +16,15 @@ EXPECTED_COUNTS = {
                    "val_distractors": 500, "test_distractors": 2000},
     "disc21": {"index": 50_000, "val_targets": 500, "test_targets": 2000,
                "val_distractors": 500, "test_distractors": 2000,
-               "dev_calibration": 10_000, "dev_report": 10_000},
+               "dev_calibration": 10_000, "dev_report": 10_000, "scale": 50_000},
 }
 
 
 def validate_dataset(dataset: str, *, expected_counts: dict[str, int] | None = None) -> dict:
     """Check split structure, ground truth and every required image; raise on failure."""
-    splits = {name: load_split(dataset, name) for name in SPLIT_NAMES[dataset]}
+    # The scale split is optional: it exists only where the 100,000-reference point was downloaded.
+    splits = {name: load_split(dataset, name) for name in SPLIT_NAMES[dataset]
+              if name != "scale" or split_exists(dataset, name)}
     expected = EXPECTED_COUNTS[dataset] if expected_counts is None else expected_counts
     errors = []
     for name, ids in splits.items():

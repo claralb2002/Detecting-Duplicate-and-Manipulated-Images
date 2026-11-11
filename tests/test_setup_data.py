@@ -127,6 +127,7 @@ class SetupDataTests(unittest.TestCase):
         truth = {"Q00000": "R000001", "Q00002": "R000002"}
         expected_counts = {n: len(ids) for n, ids in splits.items()}
         with patch("near_duplicates.validate.load_split", side_effect=lambda d, n: splits[n]), \
+             patch("near_duplicates.validate.split_exists", return_value=False), \
              patch("near_duplicates.validate.dev_ground_truth", return_value=truth), \
              patch("near_duplicates.validate.fit_image_ids", return_value=["R000003"]), \
              patch("near_duplicates.validate.image_path", return_value=self.source):

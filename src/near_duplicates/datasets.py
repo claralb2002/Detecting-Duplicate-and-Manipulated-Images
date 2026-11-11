@@ -59,7 +59,7 @@ def load_split(dataset: str, name: str) -> list[str]:
 SPLIT_NAMES = {
     "caltech101": ("index", "val_targets", "test_targets", "val_distractors", "test_distractors"),
     "disc21": ("index", "val_targets", "test_targets", "val_distractors", "test_distractors",
-               "dev_calibration", "dev_report"),
+               "dev_calibration", "dev_report", "scale"),
 }
 
 
@@ -117,8 +117,12 @@ def write_splits(dataset: str, splits: dict[str, list[str]]) -> None:
         (folder / f"{name}.txt").write_text("\n".join(ids) + "\n")
 
 
+def split_exists(dataset: str, name: str) -> bool:
+    return (SPLITS_DIR / dataset / f"{name}.txt").exists()
+
+
 def splits_exist(dataset: str) -> bool:
-    return (SPLITS_DIR / dataset / "index.txt").exists()
+    return split_exists(dataset, "index")
 
 
 def make_caltech_splits(image_ids: list[str]) -> dict[str, list[str]]:
@@ -169,6 +173,12 @@ def make_disc21_splits(ground_truth: dict[str, str], index_size: int, negative_q
         "dev_calibration": sorted(positives[::2] + negatives[::2]),
         "dev_report": sorted(positives[1::2] + negatives[1::2]),
     })
+
+
+def make_disc21_scale_split(taken: set[str], count: int) -> list[str]:
+    """`count` further random references outside every existing split, to grow the index for the scale point."""
+    free = np.setdiff1d([f"R{i:06d}" for i in range(DISC21_REFERENCE_COUNT)], sorted(taken))
+    return sorted(np.random.default_rng(SPLIT_SEED + 1).permutation(free)[:count].tolist())
 
 
 def checked(splits: dict[str, list[str]]) -> dict[str, list[str]]:

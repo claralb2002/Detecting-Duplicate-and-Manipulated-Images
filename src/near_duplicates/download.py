@@ -3,6 +3,7 @@
     uv run python -m near_duplicates.download caltech101           # 130 MB, about a minute
     uv run python -m near_duplicates.download disc21               # about 12 GB of selected images
     uv run python -m near_duplicates.download disc21 --limit 200   # smoke test
+    uv run python -m near_duplicates.download disc21 --scale 50000 # 50,000 further references, about 8.8 GB
 
 DISC21 images are fetched one by one from Meta's zip archives with HTTP range requests, so only the images
 named in the splits are downloaded, never whole 8.8 GB archives. Reruns skip finished files, so an
@@ -34,7 +35,9 @@ from near_duplicates.datasets import (
     image_path,
     load_split,
     make_caltech_splits,
+    make_disc21_scale_split,
     make_disc21_splits,
+    split_exists,
     splits_exist,
     write_splits,
 )
@@ -184,8 +187,13 @@ def disc21(args: argparse.Namespace) -> list[str]:
     if not splits_exist("disc21"):
         write_splits("disc21", make_disc21_splits(dev_ground_truth(), args.index_size, args.negative_queries))
 
-    wanted = sorted({image_id for name in ("index", "val_distractors", "test_distractors", "dev_calibration", "dev_report")
-                     for image_id in load_split("disc21", name)})
+    names = ["index", "val_distractors", "test_distractors", "dev_calibration", "dev_report"]
+    if args.scale:
+        if not split_exists("disc21", "scale"):
+            taken = {image_id for name in names for image_id in load_split("disc21", name)}
+            write_splits("disc21", {"scale": make_disc21_scale_split(taken, args.scale)})
+        names.append("scale")
+    wanted = sorted({image_id for name in names for image_id in load_split("disc21", name)})
     if args.limit:
         wanted = [i for i in wanted if i.startswith("R")][: args.limit] + [i for i in wanted if i.startswith("Q")][: args.limit]
     missing = [i for i in wanted if not image_path("disc21", i).exists()]
@@ -208,6 +216,7 @@ def main() -> None:
     parser.add_argument("dataset", choices=("caltech101", "disc21"))
     parser.add_argument("--index-size", type=int, default=50_000, help="DISC21 references in the index")
     parser.add_argument("--negative-queries", type=int, default=10_000, help="DISC21 development queries without a match")
+    parser.add_argument("--scale", type=int, help="DISC21 references in the separate scale split, e.g. 50000")
     parser.add_argument("--no-attributions", dest="attributions", action="store_false", help="skip the 187 MB attribution CSV")
     parser.add_argument("--workers", type=int, default=32)
     parser.add_argument("--limit", type=int, help="fetch only the first N references and N queries (smoke test)")
