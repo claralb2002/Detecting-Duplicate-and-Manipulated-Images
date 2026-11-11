@@ -32,6 +32,22 @@ class FeatureCache:
         feature: str, parameters: dict,
         compute: Callable[[np.ndarray], dict[str, np.ndarray]],
     ) -> dict[str, np.ndarray]:
+        return self.get_or_compute_derived(
+            dataset, image_id, config, feature, parameters,
+            lambda: compute(load_image(image_path(dataset, image_id), config)),
+        )
+
+    def get_or_compute_derived(
+        self, dataset: str, image_id: str, config: PreprocessConfig,
+        feature: str, parameters: dict,
+        compute: Callable[[], dict[str, np.ndarray]],
+    ) -> dict[str, np.ndarray]:
+        """Cache derived arrays without decoding an image on a cache hit.
+
+        Source-content invalidation is unchanged. Callers may lazily share one
+        decoded source across multiple extractors or transformed queries.
+        Include the full derivation/transform identity in parameters.
+        """
         source = image_path(dataset, image_id)
         metadata = json.dumps({
             "schema": 1, "dataset": dataset, "image_id": image_id,
@@ -51,7 +67,7 @@ class FeatureCache:
             except (OSError, ValueError, KeyError, TypeError, EOFError, BadZipFile):
                 pass  # A damaged/interrupted cache is regenerated, not treated as data.
 
-        arrays = compute(load_image(source, config))
+        arrays = compute()
         if not arrays or any(
             not isinstance(name, str) or not name.isidentifier() or name.startswith("__")
             or name in {"file", "allow_pickle"}
