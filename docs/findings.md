@@ -314,6 +314,25 @@ RANSAC's cost is dominated by verifying its 10 shortlisted images, so exhaustive
 Index memory grows linearly: 21 MB for pHash, 349 MB for visual words, and 4.1 GB for RANSAC at 100,000 images, about 41 KB per image for descriptors and keypoint positions.
 Recall at the threshold falls as the index grows, by 0.09 for exhaustive RANSAC from 10,000 to 100,000, because more references compete with the source and the threshold set on distractors rises (from 6.1 to 18.1 inliers for exhaustive RANSAC, from 0.154 to 0.197 Jaccard for visual words); the LSH variant loses less (0.03), since LSH also hides some of those competitors.
 
+## 17. Why RANSAC misses: verification shortfall, retrieval, ranking (test split)
+
+Each target of `visual-words+ransac` on the test split (104,000 per mode) falls into one class, checked in this order at that mode's own operating point (inlier threshold 12.2 exhaustive, 7.1 with LSH, both set on validation):
+
+1. found: the source is the top answer and scores above the threshold;
+2. too few inliers: the true pair itself does not exceed the threshold, so no retrieval could have accepted it;
+3. not proposed by LSH: the true pair would pass, but MinHash never made the source a candidate;
+4. shortlist or outranked: the true pair would pass and was retrievable, but it did not enter the top 10 by Jaccard similarity or a wrong image scored higher.
+
+| Mode | Found | Too few inliers | Not proposed by LSH | Shortlist or outranked |
+| --- | --- | --- | --- | --- |
+| Exhaustive | 0.832 | 0.137 | - | 0.031 |
+| LSH | 0.790 | 0.083 | 0.119 | 0.009 |
+
+"Too few inliers" is a failure to meet the geometric threshold, mostly because too few useful features survive the edit, not a pure representation failure: contrast loss of 90% (no keypoints, 1.00), flips with JPEG (0.70 to 0.92, since SIFT descriptors are not mirror-invariant), blur sigma 8 (0.60) and flips (0.59).
+The two rows are not comparable class by class, because the LSH threshold is lower: LSH accepts some true pairs with 7 to 12 inliers that the exhaustive threshold rejects, so its "too few inliers" share is smaller.
+With LSH the largest class of misses is retrieval: MinHash does not propose sources whose Jaccard similarity has collapsed although enough inliers survive, above all under strong blur and downscaling (rotate+blur level 3, 0.56; blur sigma 8, 0.49; doubled brightness, 0.47; downscale to 10%, 0.46).
+Ranking errors are rare in both modes (3.1% and 0.9%), so a longer shortlist would gain little, as `tune` predicted (finding 13).
+
 ## Open for the seats
 
 - Seat 1: pHash (b, r) beyond one tuned point, and the scale point at 100,000 references to see whether the LSH advantage over the scan grows.
