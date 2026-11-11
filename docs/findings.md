@@ -172,6 +172,46 @@ Combinations, held-out half, mean recall at the common false-match rate with 95%
 
 The held-out false-match rate of the RANSAC cascade, 1.45%, has the source-bootstrap interval [0.57%, 2.49%], so its overshoot of 1% is within the noise of 250 distractor sources; the Wilson interval on 13,000 distractor queries would have called it significant.
 
+## 13. The aligned pipeline: edits at full resolution, same frozen settings
+
+The pipeline on `main` applies each edit to the full-resolution image and only then makes the 512-pixel copy for SIFT, as a re-upload edits the original; before, edits were applied to the 512-pixel copy.
+DISC21 references are about 1,024 pixels on the longer side, so a downscale to 50% now leaves SIFT nearly the same image, and the strengths of findings 1-12 are not comparable one to one with this section.
+Everything else is unchanged: the vocabulary is fitted on the 38,013-image fitting pool, and the run flags are the frozen ones of finding 10.
+
+Recall at the 1% threshold on validation, 95% intervals from resampling source images:
+
+| System | Exhaustive | LSH | Candidates | ms per query, exhaustive / LSH |
+| --- | --- | --- | --- | --- |
+| pHash | 0.481 [0.478, 0.484] | 0.508 [0.504, 0.511] | 0.04% | 0.048 / 0.017 |
+| Visual words | 0.610 [0.604, 0.616] | 0.609 [0.603, 0.615] | 4.5% | 4.4 / 1.2 |
+| Visual words + RANSAC | 0.837 [0.827, 0.845] | 0.793 [0.785, 0.800] | 4.5% | 12.1 / 6.7 |
+| Visual words, containment | 0.202 [0.199, 0.205] | 0.408 [0.401, 0.415] | 4.5% | 4.3 / 1.2 |
+
+Visual words gain 0.06 and RANSAC 0.10 over finding 12; pHash is unchanged, since it reduces its input to 32 x 32 pixels whether that input has 512 pixels on the longer side or the full resolution.The s-curve still predicts LSH recall@1: pHash 0.543 measured against 0.540 predicted, visual words 0.789 against 0.783.
+
+`tune` on this run confirms the frozen settings rather than moving them:
+
+- Its predictions match the run: candidates 0.0452 measured against 0.0453 predicted for visual words, RANSAC recall at the threshold 0.837 against 0.837.
+- 8,192 words beat 2,048 again (recall at the threshold 0.610 against 0.579; RANSAC, top 10, 0.837 against 0.806).
+- The frozen MinHash setting is lossless for visual words alone (0.609 against 0.610 exhaustive).
+- For RANSAC the gap between rows of 2 and rows of 1 remains: with 2 rows no setting predicts more than about 0.77, and staying within 0.005 of exhaustive needs 1 row and 48% of the catalogue as candidates.
+- A top-25 shortlist would add 0.007 at 2.5 times the verification cost, so the shortlist stays at 10.
+
+`tune` predicts RANSAC with LSH at 0.767 at the frozen setting, but the run measures 0.793.
+`tune` keeps the exhaustive threshold, while `run` calibrates the LSH threshold on LSH's own distractor scores; LSH removes some high-scoring distractors, so its threshold is lower and admits more targets, as for pHash in finding 12.
+The prediction is therefore a lower bound for the LSH systems.
+
+Combinations, held-out half, mean recall at the common false-match rate with 95% intervals:
+
+| B system | Retrieval | pHash | B alone | Cascade | Fusion | Either | Settled by pHash |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Visual words | LSH | 0.508 | 0.584 | 0.730 [0.723, 0.737] | 0.726 | 0.741 | 22% |
+| Visual words + RANSAC | exhaustive | 0.481 | 0.867 | 0.915 [0.906, 0.923] | 0.891 | 0.920 | 21% |
+| Visual words + RANSAC | LSH | 0.508 | 0.800 | 0.877 [0.869, 0.885] | 0.867 | 0.883 | 21% |
+
+The cascade stays within 0.006 of the best possible combination and beats fusion, as in finding 5.
+The held-out false-match rate of the exhaustive RANSAC cascade is 1.44%, with the source-bootstrap interval [0.45%, 2.63%], so it again sits within the noise of 250 distractor sources.
+
 ## Open for the seats
 
 - Seat 1: pHash (b, r) beyond one tuned point, and the scale point at 100,000 references to see whether the LSH advantage over the scan grows.
