@@ -282,6 +282,38 @@ At a fixed Jaccard threshold a strict pHash distance does help: 0.594 for J >= 0
 Pair recall stays at most 0.83, since flips and level-3 chains reach no threshold.
 These thresholds and resolutions are chosen on this catalogue; `dedup --seed 1` plants a new catalogue on which the chosen settings are to be reported.
 
+## 16. Scalability from 10,000 to 100,000 references (validation queries)
+
+`run disc21 --split val` with the frozen flags at `--index-size 10000` and `25000`, the full index (50,000) and `--scale` (100,000); each point calibrates its own thresholds, and the vocabulary is the same at every point.
+
+Milliseconds per query (search after feature extraction):
+
+| System | Mode | 10,000 | 25,000 | 50,000 | 100,000 |
+| --- | --- | --- | --- | --- | --- |
+| pHash | exhaustive | 0.017 | 0.035 | 0.048 | 0.106 |
+| pHash | LSH | 0.021 | 0.023 | 0.017 | 0.023 |
+| Visual words | exhaustive | 1.05 | 2.89 | 4.38 | 10.13 |
+| Visual words | LSH | 0.21 | 0.80 | 1.16 | 2.65 |
+| Visual words + RANSAC | exhaustive | 7.5 | 10.5 | 12.1 | 21.1 |
+| Visual words + RANSAC | LSH | 6.1 | 7.0 | 6.7 | 9.0 |
+
+Recall at the 1% threshold:
+
+| System | Mode | 10,000 | 25,000 | 50,000 | 100,000 |
+| --- | --- | --- | --- | --- | --- |
+| pHash | exhaustive | 0.519 | 0.519 | 0.481 | 0.481 |
+| pHash | LSH | 0.528 | 0.508 | 0.508 | 0.478 |
+| Visual words | exhaustive | 0.655 | 0.630 | 0.610 | 0.585 |
+| Visual words | LSH | 0.653 | 0.628 | 0.609 | 0.585 |
+| Visual words + RANSAC | exhaustive | 0.894 | 0.866 | 0.837 | 0.804 |
+| Visual words + RANSAC | LSH | 0.803 | 0.798 | 0.793 | 0.772 |
+
+With r fixed, LSH proposes a constant fraction of the index (0.04% for pHash, 4.5% for visual words at every size), so its cost grows linearly too, only by a constant factor less: visual words with LSH are 3.6 to 5.1 times faster than the scan at every size.
+pHash's candidates are so few (43 at 100,000) that the lookup itself dominates, so its LSH time stays near 0.02 ms while the scan grows sixfold; LSH is no faster than the scan at 10,000 and 4.6 times faster at 100,000.
+RANSAC's cost is dominated by verifying its 10 shortlisted images, so exhaustive retrieval adds only the Jaccard scan in front of it.
+Index memory grows linearly: 21 MB for pHash, 349 MB for visual words, and 4.1 GB for RANSAC at 100,000 images, about 41 KB per image for descriptors and keypoint positions.
+Recall at the threshold falls as the index grows, by 0.09 for exhaustive RANSAC from 10,000 to 100,000, because more references compete with the source and the threshold set on distractors rises (from 6.1 to 18.1 inliers for exhaustive RANSAC, from 0.154 to 0.197 Jaccard for visual words); the LSH variant loses less (0.03), since LSH also hides some of those competitors.
+
 ## Open for the seats
 
 - Seat 1: pHash (b, r) beyond one tuned point, and the scale point at 100,000 references to see whether the LSH advantage over the scan grows.
