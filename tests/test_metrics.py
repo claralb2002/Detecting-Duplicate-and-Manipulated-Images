@@ -5,8 +5,16 @@ import pandas as pd
 import pytest
 
 from near_duplicates.metrics import (
-    RESULT_COLUMNS, calibrate, micro_average_precision, percentile_interval, pooled_rates, retrieval_scores,
-    source_resamples, summarize, threshold_at_fmr, wilson_interval,
+    RESULT_COLUMNS,
+    calibrate,
+    micro_average_precision,
+    percentile_interval,
+    pooled_rates,
+    retrieval_scores,
+    source_resamples,
+    summarize,
+    threshold_at_fmr,
+    wilson_interval,
 )
 
 

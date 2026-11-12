@@ -1,12 +1,13 @@
 """System B checks: real SIFT, vocabularies, minwise mathematics, banding and robust geometry."""
 
 import itertools
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from near_duplicates.local_features import SIFTConfig, extract_local_features
 from near_duplicates.lsh import BandIndex, band_keys, s_curve
@@ -15,7 +16,6 @@ from near_duplicates.phash import phash
 from near_duplicates.preprocessing import PHASH_PREPROCESS, SIFT_PREPROCESS, preprocess_image
 from near_duplicates.spatial import SpatialConfig, accepted_inliers, verify_spatial
 from near_duplicates.visual_words import VisualVocabulary, fit_vocabulary, sample_descriptors
-from PIL import Image
 
 cv2.setNumThreads(1)
 

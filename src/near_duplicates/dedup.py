@@ -29,10 +29,10 @@ from scipy.sparse.csgraph import connected_components
 from sklearn.metrics import adjusted_rand_score
 
 from near_duplicates.datasets import REPO_ROOT, load_split
-from near_duplicates.features import cache_dir, Job, cached_features, worker_pool
+from near_duplicates.features import Job, cache_dir, cached_features, worker_pool
 from near_duplicates.run import index_subset
-from near_duplicates.systems import PhashSystem, VisualWordSystem
 from near_duplicates.spatial import pair_inliers
+from near_duplicates.systems import PhashSystem, VisualWordSystem
 from near_duplicates.vocabulary import fitted_vocabulary
 
 # Realistic re-upload edits that at least one of the two systems survives at the validation thresholds.

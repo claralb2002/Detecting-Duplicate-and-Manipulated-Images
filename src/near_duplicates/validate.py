@@ -5,11 +5,16 @@ import json
 import re
 
 from near_duplicates.datasets import (
-    DATASETS, SPLIT_NAMES, CALTECH_EXCLUDED_CATEGORIES, dev_ground_truth,
-    fit_image_ids, image_path, load_split, split_exists,
+    CALTECH_EXCLUDED_CATEGORIES,
+    DATASETS,
+    SPLIT_NAMES,
+    dev_ground_truth,
+    fit_image_ids,
+    image_path,
+    load_split,
+    split_exists,
 )
-from near_duplicates.preprocessing import load_image, PreprocessConfig
-
+from near_duplicates.preprocessing import PreprocessConfig, load_image
 
 EXPECTED_COUNTS = {
     "caltech101": {"index": 6209, "val_targets": 500, "test_targets": 2000,

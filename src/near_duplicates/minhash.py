@@ -1,7 +1,7 @@
 """Own MinHash signatures, following Week 4 Exercises 3-7; banding is `lsh.band_keys` with `lsh.BandIndex`."""
 
-from collections.abc import Sequence
 import hashlib
+from collections.abc import Sequence
 
 import numpy as np
 

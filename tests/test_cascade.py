@@ -7,8 +7,14 @@ import pandas as pd
 import pytest
 
 from near_duplicates.cascade import (
-    CascadeThresholds, calibrate_cascade, calibrate_fusion, calibration_half, cascade_answer, compare,
-    compare_calibrated_on, paired,
+    CascadeThresholds,
+    calibrate_cascade,
+    calibrate_fusion,
+    calibration_half,
+    cascade_answer,
+    compare,
+    compare_calibrated_on,
+    paired,
 )
 from near_duplicates.metrics import RESULT_COLUMNS
 

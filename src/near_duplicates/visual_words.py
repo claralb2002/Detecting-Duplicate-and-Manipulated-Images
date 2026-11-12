@@ -1,9 +1,9 @@
 """Visual vocabularies fitted only on the committed fitting pool (Week 6)."""
 
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 import hashlib
 import json
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np

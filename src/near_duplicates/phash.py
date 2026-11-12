@@ -12,7 +12,6 @@ import numpy as np
 import scipy
 from scipy.fft import dctn
 
-
 HASH_BITS = 64
 PHASH_PARAMETERS = {
     "version": 1, "dct_type": 2, "norm": "backward", "low_frequency_size": 8,

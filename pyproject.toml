@@ -29,5 +29,14 @@ dev = [
     "pytest>=9.2.0",
 ]
 
+[tool.ruff]
+line-length = 150
+
+[tool.ruff.lint]
+select = ["F", "I"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false

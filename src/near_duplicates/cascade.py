@@ -14,14 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from near_duplicates.metrics import (
-    is_target,
-    percentile_interval,
-    source_resamples,
-    threshold_allowing,
-    threshold_at_fmr,
-    wilson_interval,
-)
+from near_duplicates.metrics import is_target, percentile_interval, source_resamples, threshold_allowing, threshold_at_fmr, wilson_interval
 
 SYSTEM_A = "phash"
 PAIR_KEYS = ["mode", "kind", "strength", "query_id", "true_id"]

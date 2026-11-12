@@ -11,7 +11,6 @@ import scipy.special
 from near_duplicates.phash import HASH_BITS
 
 
-
 def s_curve(similarity: np.ndarray | float, bands: int, rows: int) -> np.ndarray:
     """Probability that a pair becomes a candidate when each row agrees independently with probability `similarity`."""
     return 1.0 - (1.0 - np.asarray(similarity, dtype=float) ** rows) ** bands

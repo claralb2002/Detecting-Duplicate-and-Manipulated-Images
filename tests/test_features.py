@@ -4,9 +4,9 @@ import os
 
 import imagehash
 import numpy as np
+from conftest import textured_image
 from PIL import Image
 
-from conftest import textured_image
 from near_duplicates.features import FeatureSet, image_features, load_features, save_features, source_image, worker_pool
 from near_duplicates.local_features import extract_local_features
 from near_duplicates.phash import phash

@@ -31,8 +31,8 @@ from near_duplicates.datasets import DATA_DIR, DISC21_DIR, image_path, load_spli
 from near_duplicates.features import cache_dir, load_features, source_image
 from near_duplicates.metrics import is_target
 from near_duplicates.phash import HASH_BITS
-from near_duplicates.transforms import CONDITIONS, query_seed, transform
 from near_duplicates.spatial import verify_spatial
+from near_duplicates.transforms import CONDITIONS, query_seed, transform
 
 RUN_FILE = re.compile(r"queries_(?P<dataset>[a-z0-9]+)_.*_(?P<split>val|test)$")
 SYSTEMS = ("phash", "visual-words", "visual-words+ransac")

@@ -1,10 +1,10 @@
 """Joint pHash/SIFT extraction from one decoded RGB source."""
 
-from dataclasses import asdict, dataclass
 import json
 import os
-from pathlib import Path
 import tempfile
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import cv2
 import numpy as np

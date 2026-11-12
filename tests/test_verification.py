@@ -3,7 +3,8 @@ from __future__ import annotations
 import numpy as np
 
 from near_duplicates.features import FeatureSet, image_features, source_image
-from near_duplicates.spatial import accepted_inliers as inliers, pair_inliers
+from near_duplicates.spatial import accepted_inliers as inliers
+from near_duplicates.spatial import pair_inliers
 from near_duplicates.systems import SpatiallyVerifiedSystem, VisualWordSystem
 from near_duplicates.transforms import transform
 from near_duplicates.visual_words import fit_vocabulary
