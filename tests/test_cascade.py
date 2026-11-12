@@ -7,7 +7,8 @@ import pandas as pd
 import pytest
 
 from near_duplicates.cascade import (
-    CascadeThresholds, calibrate_cascade, calibrate_fusion, calibration_half, cascade_answer, compare, paired,
+    CascadeThresholds, calibrate_cascade, calibrate_fusion, calibration_half, cascade_answer, compare,
+    compare_calibrated_on, paired,
 )
 from near_duplicates.metrics import RESULT_COLUMNS
 
@@ -104,3 +105,18 @@ def test_either_counts_a_false_match_from_either_system():
     _, summary = compare(pairs, fmr=0.01, system_b="visual-words")
     either = summary.set_index("method").loc["either"]
     assert either.false_match_rate == pytest.approx(1.0)
+
+
+def test_calibrating_on_another_run_takes_thresholds_from_it_and_rates_from_every_evaluated_query():
+    calibration, evaluation = synthetic_pairs(60, 200, seed=0), synthetic_pairs(60, 200, seed=1)
+    evaluation["query_id"] = "test-" + evaluation.query_id
+    # Every evaluation distractor now outscores everything: a threshold calibrated on these rows would reject them all.
+    evaluation.loc[evaluation.true_id == "", ["score_a", "score_b"]] = [100.0, 100.0]
+    _, summary = compare_calibrated_on(calibration, evaluation, fmr=0.05, system_b="visual-words")
+    cascade = summary.set_index("method").loc["cascade"]
+    expected = calibrate_cascade(calibration, fmr=0.05)
+    assert (cascade.a, cascade.b) == (expected.a, expected.b)
+    answer, _ = cascade_answer(evaluation, expected)
+    target = evaluation.true_id != ""
+    assert cascade.mean_recall == pytest.approx((answer == evaluation.true_id)[target].mean())
+    assert cascade.false_match_rate == pytest.approx(1.0)

@@ -3,9 +3,11 @@
     uv run python -m near_duplicates.analyze results/queries_caltech101_n6209_k2048_p128_mb64r2_bb16r8_s0_val.csv
 
 LSH loss (RQ2): measured LSH recall against the recall the s-curve predicts from each target's true similarity.
-Combinations (RQ4): each system alone, the cascade, score fusion and the best possible combination, all
-calibrated on half of the source images and evaluated on the other half at the same false-match rate; for the
-DISC21 development queries (`_dev` files), calibrated on `dev_calibration` and evaluated on `dev_report`.
+Combinations (RQ4): each system alone, the cascade, score fusion and the best possible combination, at the same
+false-match rate. A test file is calibrated on the validation file of the same run and evaluated on the whole test
+split, the protocol of the single systems; the DISC21 development queries (`_dev` files) are calibrated on
+`dev_calibration` and evaluated on `dev_report`; any other file is calibrated on half of the source images and
+evaluated on the other half.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from near_duplicates.cascade import SYSTEM_A, compare, paired
+from near_duplicates.cascade import SYSTEM_A, compare, compare_calibrated_on, paired
 from near_duplicates.metrics import lsh_loss
 from near_duplicates.plots import plot_combinations
 from near_duplicates.transforms import CONDITIONS
@@ -44,7 +46,14 @@ def main() -> None:
     if settings is None:
         parser.error("the file name must carry the run tag with the LSH settings, as `run` writes it")
     tag = args.queries.stem.removeprefix("queries_")
-    results = pd.read_csv(args.queries, keep_default_na=False, na_values={"true_similarity": [""]})
+    read = lambda path: pd.read_csv(path, keep_default_na=False, na_values={"true_similarity": [""]})
+    results = read(args.queries)
+    validation = None
+    if tag.endswith("_test"):
+        validation_file = args.queries.with_name(args.queries.name.removesuffix("_test.csv") + "_val.csv")
+        if not validation_file.exists():
+            parser.error(f"{validation_file} is missing: a test file is calibrated on the validation file of its run")
+        validation = read(validation_file)
     out = args.queries.parent
     pd.set_option("display.width", 200)
 
@@ -59,14 +68,19 @@ def main() -> None:
     for system_b in [s for s in dict.fromkeys(results.system) if s != SYSTEM_A]:
         for mode in ("lsh", "exhaustive"):
             pairs = paired(results, mode, system_b)
-            calibrating = pairs.kind == "dev_calibration" if tag.endswith("_dev") else None
-            per_condition, summary = compare(pairs, args.target_fmr, system_b, calibrating)
+            if validation is not None:
+                per_condition, summary = compare_calibrated_on(paired(validation, mode, system_b), pairs, args.target_fmr,
+                                                               system_b)
+            else:
+                calibrating = pairs.kind == "dev_calibration" if tag.endswith("_dev") else None
+                per_condition, summary = compare(pairs, args.target_fmr, system_b, calibrating)
             per_condition = condition_order(per_condition)
             name = f"{tag}_{system_b}_{mode}"
             per_condition.to_csv(out / f"combinations_{name}.csv", index=False)
             summary.to_csv(out / f"combinations_summary_{name}.csv", index=False)
             recall = by_condition(per_condition, "method", "recall")
-            print(f"\nRecall at the {args.target_fmr:.0%} false-match rate, B = {system_b}, {mode} retrieval, held out\n\n"
+            evaluation = "calibrated on validation" if validation is not None else "held out"
+            print(f"\nRecall at the {args.target_fmr:.0%} false-match rate, B = {system_b}, {mode} retrieval, {evaluation}\n\n"
                   f"{recall[summary.method].round(2).to_string()}\n\n{summary.round(4).to_string(index=False)}")
             plot_combinations(per_condition, out / f"combinations_{name}.png")
 

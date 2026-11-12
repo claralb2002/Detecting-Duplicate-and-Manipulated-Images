@@ -167,3 +167,14 @@ def compare(pairs: pd.DataFrame, fmr: float, system_b: str, calibrating: pd.Seri
                                dict(method="cascade", a=cascade.a, b=cascade.b)])
     summary = pd.DataFrame(overall).merge(thresholds, on="method", how="left")
     return pd.concat(per_condition, ignore_index=True), summary
+
+
+def compare_calibrated_on(calibration: pd.DataFrame, evaluation: pd.DataFrame, fmr: float,
+                          system_b: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """`compare` with every threshold set on the `calibration` pairs and every rate measured on all `evaluation` pairs.
+
+    For a test run calibrated on its validation run, this is the protocol of the single systems, which reuse
+    their validation thresholds on test, so the combinations and the systems alone are compared like for like.
+    """
+    both = pd.concat([calibration, evaluation], ignore_index=True)
+    return compare(both, fmr, system_b, pd.Series(np.arange(len(both)) < len(calibration), index=both.index))
