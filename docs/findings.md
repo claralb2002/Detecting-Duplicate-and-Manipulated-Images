@@ -358,6 +358,26 @@ The reported recall is therefore conservative for RANSAC, and its intervals are 
 
 **Vocabulary diagnostic.** The `tune` run of finding 13 printed Davies-Bouldin indices of 2.886 for 2,048 words and 2.525 for 8,192 (lower is more compact), from the vocabulary metadata in `data/cache/`.
 
+## 19. The combinations at equal realised false-match rates (test split)
+
+`analyze` on a test file now also calibrates every system and combination on validation at target rates of 0.1%, 0.2%, 0.5%, 1%, 2% and 5%, and records the recall and false-match rate each realises on test (`operating_points_<tag>_<system B>.csv` and `.png`).
+For B = visual words + RANSAC:
+
+| Retrieval | Target | RANSAC alone | Cascade | Fusion | Either |
+| --- | --- | --- | --- | --- | --- |
+| Exhaustive | 0.2% | 0.711 at 0.05% | 0.812 at 0.05% | 0.806 at 0.04% | 0.821 at 0.09% |
+| Exhaustive | 1% | 0.832 at 0.40% | 0.887 at 0.38% | 0.870 at 0.36% | 0.893 at 0.53% |
+| Exhaustive | 2% | 0.876 at 1.53% | 0.927 at 1.50% | 0.898 at 0.58% | 0.931 at 2.23% |
+| LSH | 1% | 0.790 at 0.58% | 0.867 at 0.55% | 0.850 at 0.38% | 0.877 at 1.17% |
+| LSH | 2% | 0.795 at 1.72% | 0.878 at 1.61% | 0.878 at 1.36% | 0.882 at 2.28% |
+
+Plotted against the realised rate, cascade, fusion and either lie on one curve, all clearly above RANSAC alone: the combination's gain over RANSAC is real at equal error rates (0.055 and 0.077 at the 1% target, about 0.10 at 0.05%), but the cascade's 0.017 lead over fusion at the 1% target comes from fusion realising a lower rate, and "either" is no upper bound at equal rates.
+The defensible claim is parity in accuracy between cascade and fusion, with the cascade cheaper because pHash settles 41% of the edited copies before SIFT.
+
+History, for honesty: under the half-split calibration of finding 14 the cascade led fusion by 0.004 to 0.007; the validation calibration of finding 18 raised that to 0.017 at the 1% target; these operating points show that neither lead holds at equal realised rates.
+
+**Extraction cost** (single thread, 200 DISC21 references, with an experiment queue running): decoding 9.0 ms, pHash 4.6 ms, pHash and SIFT together 39.2 ms per image, so a query settled by pHash costs about 14 ms before search against about 48 ms with SIFT.
+
 ## Open for the seats
 
 - Seat 1: pHash (b, r) beyond one tuned point, and the scale point at 100,000 references to see whether the LSH advantage over the scan grows.
