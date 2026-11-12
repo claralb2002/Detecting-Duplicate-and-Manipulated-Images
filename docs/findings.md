@@ -410,6 +410,7 @@ Verified edges have pair precision 0.993, so Louvain has nothing to cut.
 
 **Notebook on DISC21.** `run disc21 --split val --queries 20` and the notebook with `DATASET = "disc21"` and `QUERY_LIMIT = 20` agree on all 16,640 per-query rows except the timing column, and on every recall and false-match rate.
 The notebook stored LSH item positions as int64 where the package uses int32, so it reported 3.4 MB more index memory for pHash and 22.6 MB more for visual words; it now matches.
+The full notebook run on DISC21, with every query, reproduces the package's recall, false-match, candidate and memory tables for validation at all four index sizes, for test on both seeds and for the development queries, and both deduplication tables, to the precision it displays; `notebook.ipynb` is committed with these outputs, without progress output.
 
 **MinHash permutations and the frozen bands** (`tune --vocabulary 8192 --num-perm 128 256 512` on the seed-0 validation run).
 The prediction of a (b, r) does not depend on the number of permutations, which only bounds b x r, so 512 permutations matter only by allowing more bands.
