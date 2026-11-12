@@ -411,6 +411,12 @@ Verified edges have pair precision 0.993, so Louvain has nothing to cut.
 **Notebook on DISC21.** `run disc21 --split val --queries 20` and the notebook with `DATASET = "disc21"` and `QUERY_LIMIT = 20` agree on all 16,640 per-query rows except the timing column, and on every recall and false-match rate.
 The notebook stored LSH item positions as int64 where the package uses int32, so it reported 3.4 MB more index memory for pHash and 22.6 MB more for visual words; it now matches.
 
+**MinHash permutations and the frozen bands** (`tune --vocabulary 8192 --num-perm 128 256 512` on the seed-0 validation run).
+The prediction of a (b, r) does not depend on the number of permutations, which only bounds b x r, so 512 permutations matter only by allowing more bands.
+For RANSAC with 2 rows, the best predicted recall is 0.723 with 128 permutations, 0.775 with 256 and 0.810 with 512 (256 bands, 9.6% candidates), against 0.837 exhaustive.
+The cheapest settings within 0.005 of exhaustive recall are still pHash 12 x 16 (0.03% candidates) and visual words 72 x 2 (2.9%; finding 10 found 68 x 2 before the alignment).
+The frozen 113 x 2 costs visual words 4.5% candidates instead of 2.9% and raises RANSAC's predicted LSH recall from 0.733 (72 x 2) to 0.767, which is why the looser setting is shared by all visual-word systems; pHash's 17 x 16 loses 0.002 against 0.005 for 12 x 16.
+
 ## Open for the seats
 
 - Seat 1: pHash (b, r) beyond one tuned point, and the scale point at 100,000 references to see whether the LSH advantage over the scan grows.
