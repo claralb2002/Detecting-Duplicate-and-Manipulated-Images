@@ -100,3 +100,22 @@ def plot_combinations(per_condition: pd.DataFrame, path: Path) -> None:
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
+
+
+def plot_operating_points(points: dict[str, pd.DataFrame], path: Path) -> None:
+    """Recall against the realised false-match rate per retrieval mode, one curve per system and combination;
+    the points calibrated at a 1% target are circled."""
+    fig, axes = plt.subplots(1, len(points), figsize=(5.5 * len(points), 4), squeeze=False)
+    for ax, (mode, part) in zip(axes.flat, points.items()):
+        for method in dict.fromkeys(part.method):
+            color, line = COMBINATION_STYLES.get(method, (STYLES.get((method, "lsh"), ("C5", "-"))[0], "-"))
+            curve = part[part.method == method].sort_values("target_fmr")
+            ax.plot(curve.false_match_rate, curve.mean_recall, color=color, linestyle=line, marker=".", label=method)
+            at_target = curve[np.isclose(curve.target_fmr, 0.01)]
+            ax.scatter(at_target.false_match_rate, at_target.mean_recall, s=60, facecolors="none", edgecolors=color)
+        ax.axvline(0.01, color="0.6", linewidth=0.8, linestyle=":")
+        ax.set(xscale="log", title=f"{mode} retrieval", xlabel="realised false-match rate", ylabel="recall at threshold")
+        ax.legend(fontsize=7)
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)

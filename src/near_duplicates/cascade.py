@@ -171,3 +171,18 @@ def compare_calibrated_on(calibration: pd.DataFrame, evaluation: pd.DataFrame, f
     """
     both = pd.concat([calibration, evaluation], ignore_index=True)
     return compare(both, fmr, system_b, pd.Series(np.arange(len(both)) < len(calibration), index=both.index))
+
+
+OPERATING_FMRS = (0.001, 0.002, 0.005, 0.01, 0.02, 0.05)
+
+
+def operating_points(calibration: pd.DataFrame, evaluation: pd.DataFrame, system_b: str,
+                     fmrs: tuple[float, ...] = OPERATING_FMRS) -> pd.DataFrame:
+    """Recall and realised false-match rate on `evaluation` of each system and combination, calibrated on
+    `calibration` at every target rate in `fmrs`.
+
+    One target rate realises different rates for different methods, so a comparison at a single target can
+    favour the method that happens to spend more of its budget; the curves compare them at equal realised rates.
+    """
+    return pd.concat([compare_calibrated_on(calibration, evaluation, fmr, system_b)[1].assign(target_fmr=fmr) for fmr in fmrs],
+                     ignore_index=True)

@@ -8,6 +8,8 @@ false-match rate. A test file is calibrated on the validation file of the same r
 split, the protocol of the single systems; the DISC21 development queries (`_dev` files) are calibrated on
 `dev_calibration` and evaluated on `dev_report`; any other file is calibrated on half of the source images and
 evaluated on the other half.
+Operating points (test files): every system and combination calibrated on validation at several target rates, with
+the recall and false-match rate each realises on test, so methods are compared at equal realised rates.
 """
 
 from __future__ import annotations
@@ -18,9 +20,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from near_duplicates.cascade import SYSTEM_A, compare, compare_calibrated_on, paired
+from near_duplicates.cascade import SYSTEM_A, compare, compare_calibrated_on, operating_points, paired
 from near_duplicates.metrics import lsh_loss
-from near_duplicates.plots import plot_combinations
+from near_duplicates.plots import plot_combinations, plot_operating_points
 from near_duplicates.transforms import CONDITIONS
 
 LSH_SETTINGS = re.compile(r"_mb(?P<minhash_bands>\d+)r(?P<minhash_rows>\d+)_bb(?P<bit_bands>\d+)r(?P<bit_rows>\d+)_")
@@ -83,6 +85,11 @@ def main() -> None:
             print(f"\nRecall at the {args.target_fmr:.0%} false-match rate, B = {system_b}, {mode} retrieval, {evaluation}\n\n"
                   f"{recall[summary.method].round(2).to_string()}\n\n{summary.round(4).to_string(index=False)}")
             plot_combinations(per_condition, out / f"combinations_{name}.png")
+        if validation is not None:
+            points = {mode: operating_points(paired(validation, mode, system_b), paired(results, mode, system_b), system_b)
+                      for mode in ("exhaustive", "lsh")}
+            pd.concat(points, names=["mode", None]).reset_index(level=0).to_csv(out / f"operating_points_{tag}_{system_b}.csv", index=False)
+            plot_operating_points(points, out / f"operating_points_{tag}_{system_b}.png")
 
 
 if __name__ == "__main__":

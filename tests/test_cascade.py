@@ -14,6 +14,7 @@ from near_duplicates.cascade import (
     cascade_answer,
     compare,
     compare_calibrated_on,
+    operating_points,
     paired,
 )
 from near_duplicates.metrics import RESULT_COLUMNS
@@ -126,3 +127,13 @@ def test_calibrating_on_another_run_takes_thresholds_from_it_and_rates_from_ever
     target = evaluation.true_id != ""
     assert cascade.mean_recall == pytest.approx((answer == evaluation.true_id)[target].mean())
     assert cascade.false_match_rate == pytest.approx(1.0)
+
+
+def test_operating_points_hold_one_calibrated_comparison_per_target_rate():
+    calibration, evaluation = synthetic_pairs(60, 200, seed=2), synthetic_pairs(60, 200, seed=3)
+    evaluation["query_id"] = "test-" + evaluation.query_id
+    points = operating_points(calibration, evaluation, "visual-words", fmrs=(0.02, 0.05))
+    for fmr in (0.02, 0.05):
+        _, expected = compare_calibrated_on(calibration, evaluation, fmr, "visual-words")
+        got = points[points.target_fmr == fmr].drop(columns="target_fmr").reset_index(drop=True)
+        pd.testing.assert_frame_equal(got, expected)
