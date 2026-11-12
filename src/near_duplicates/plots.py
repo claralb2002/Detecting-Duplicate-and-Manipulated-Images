@@ -18,15 +18,13 @@ STYLES = {
     ("phash", "lsh"): ("C0", "-"), ("phash", "exhaustive"): ("C0", "--"),
     ("visual-words", "lsh"): ("C1", "-"), ("visual-words", "exhaustive"): ("C1", "--"),
     ("visual-words+ransac", "lsh"): ("C2", "-"), ("visual-words+ransac", "exhaustive"): ("C2", "--"),
-    ("visual-words-containment", "lsh"): ("C4", "-"), ("visual-words-containment", "exhaustive"): ("C4", "--"),
 }
 UNGRADED = ("clean", "flip")
 
 
 def plot_recall(summary: pd.DataFrame, path: Path) -> None:
     kinds = [k for k in dict.fromkeys(summary.kind) if k not in UNGRADED]
-    columns = 3
-    fig, axes = plt.subplots(-(-(len(kinds) + 1) // columns), columns, figsize=(13, 3.4 * -(-(len(kinds) + 1) // columns)), squeeze=False)
+    fig, axes = plt.subplots(-(-len(kinds) // 4), 4, figsize=(15, 3.2 * -(-len(kinds) // 4)), squeeze=False)
     for ax, kind in zip(axes.flat, kinds):
         for (system, mode), (color, line) in STYLES.items():
             part = summary[(summary.kind == kind) & (summary.system == system) & (summary["mode"] == mode)].sort_values("strength")
@@ -35,13 +33,7 @@ def plot_recall(summary: pd.DataFrame, path: Path) -> None:
             ax.fill_between(x, part.recall_at_1_low, part.recall_at_1_high, color=color, alpha=0.12, linewidth=0)
         ax.set(title=kind, ylim=(0, 1.02), xlabel="strength", ylabel="recall@1")
     axes.flat[0].legend(fontsize=7)
-    table_ax = axes.flat[len(kinds)]
-    table_ax.axis("off")
-    ungraded = summary[summary.kind.isin(UNGRADED)].pivot_table(index="kind", columns=["system", "mode"], values="recall_at_1")
-    if not ungraded.empty:
-        table_ax.table(cellText=ungraded.round(2).values, rowLabels=ungraded.index,
-                       colLabels=[f"{s}\n{m}" for s, m in ungraded.columns], loc="center")
-    for ax in axes.flat[len(kinds) + 1 :]:
+    for ax in axes.flat[len(kinds) :]:
         ax.axis("off")
     fig.tight_layout()
     fig.savefig(path, dpi=120)
