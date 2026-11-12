@@ -333,6 +333,31 @@ The two rows are not comparable class by class, because the LSH threshold is low
 With LSH the largest class of misses is retrieval: MinHash does not propose sources whose Jaccard similarity has collapsed although enough inliers survive, above all under strong blur and downscaling (rotate+blur level 3, 0.56; blur sigma 8, 0.49; doubled brightness, 0.47; downscale to 10%, 0.46).
 Ranking errors are rare in both modes (3.1% and 0.9%), so a longer shortlist would gain little, as `tune` predicted (finding 13).
 
+## 18. One protocol for the test combinations, and near-duplicate distractors
+
+**Combinations calibrated on validation.**
+Finding 14 calibrated the combinations on half of the test sources, while the single systems reuse their validation thresholds, so the same system received two numbers (RANSAC exhaustive 0.832 alone, 0.868 in the combination table).
+`analyze` now calibrates a test file's combinations on the validation file of the same run and evaluates them on the whole test split (`cascade.compare_calibrated_on`); this table supersedes the one in finding 14:
+
+| B system | Retrieval | pHash | B alone | Cascade | Fusion | Either | False matches, cascade | Settled by pHash |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Visual words + RANSAC | exhaustive | 0.482 | 0.832 | 0.887 [0.884, 0.890] | 0.870 | 0.893 | 0.38% | 20% |
+| Visual words + RANSAC | LSH | 0.510 | 0.790 | 0.867 [0.864, 0.870] | 0.850 | 0.877 | 0.55% | 20% |
+| Visual words | LSH | 0.510 | 0.609 | 0.748 [0.745, 0.750] | 0.737 | 0.760 | 1.24% | 22% |
+
+The RANSAC cascade gains 0.055 [0.054, 0.057] exhaustive and 0.077 [0.076, 0.079] with LSH over RANSAC alone, stays within 0.011 of "either", and now beats fusion by 0.017, which it did not under the half-split protocol.
+pHash settles 41% of the targets and none of the distractors, so the share of queries that skip SIFT depends on the share of copies among the queries.
+The development queries keep their own protocol (calibrated on `dev_calibration`), where fusion is 0.002 and 0.001 above the cascade (finding 15).
+
+**Near-duplicates among the distractors.**
+False matches concentrate on a few distractor sources: on validation, RANSAC's 260 come from 15 of 500 sources, 88% of them from sources accepted under 20 or more of the 52 conditions; on test, 415 come from 31 of 2,000.
+9 validation and 14 test sources are accepted by RANSAC without any edit or at JPEG quality 90.
+The two worst validation sources, viewed side by side with the indexed image they match, are consecutive frames of the same video, so these "false matches" are genuine near-duplicates that DISC21's reference set contains and our split counts as distractors (finding 6 found the first of them).
+They set the thresholds: dropping the 18 validation sources whose unedited version any system accepts lowers RANSAC's exhaustive threshold from 12.2 to 0.19, below a single inlier (the score is inliers plus Jaccard similarity), so even a top answer without an accepted homography passes on its Jaccard similarity; on test without its 48 such sources RANSAC's recall at the threshold rises from 0.832 to 0.877 at a false-match rate of 1.22% instead of 0.40%.
+The reported recall is therefore conservative for RANSAC, and its intervals are conditional on thresholds that a few mislabelled sources determine; the rising thresholds with index size (finding 16) may partly come from more such near-duplicates entering the index, which is not separated here.
+
+**Vocabulary diagnostic.** The `tune` run of finding 13 printed Davies-Bouldin indices of 2.886 for 2,048 words and 2.525 for 8,192 (lower is more compact), from the vocabulary metadata in `data/cache/`.
+
 ## Open for the seats
 
 - Seat 1: pHash (b, r) beyond one tuned point, and the scale point at 100,000 references to see whether the LSH advantage over the scan grows.
