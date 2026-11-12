@@ -378,6 +378,39 @@ History, for honesty: under the half-split calibration of finding 14 the cascade
 
 **Extraction cost** (single thread, 200 DISC21 references, with an experiment queue running): decoding 9.0 ms, pHash 4.6 ms, pHash and SIFT together 39.2 ms per image, so a query settled by pHash costs about 14 ms before search against about 48 ms with SIFT.
 
+## 20. Second seed, deduplication on a fresh catalogue, and the notebook on DISC21
+
+**Test, seed 1.** `--seed` changes k-means, MinHash and bit sampling (and the bootstrap); the queries and edits are seeded per query and stay the same, so pHash's exhaustive recall is identical.
+Recalibrated on validation of the same seed, test recall at the 1% target:
+
+| Method | Exhaustive, seed 0 / 1 | LSH, seed 0 / 1 |
+| --- | --- | --- |
+| pHash | 0.482 / 0.482 | 0.510 / 0.511 |
+| Visual words | 0.610 / 0.607 | 0.609 / 0.606 |
+| Visual words + RANSAC | 0.832 / 0.827 | 0.790 / 0.784 |
+| Cascade | 0.887 / 0.882 | 0.867 / 0.864 |
+| Fusion | 0.870 / 0.868 | 0.850 / 0.846 |
+| Either | 0.893 / 0.890 | 0.877 / 0.874 |
+
+Every one moves by less than 0.006, and the cascade's gain over RANSAC is 0.056 and 0.079 (seed 0: 0.055 and 0.077).
+The exception is containment with LSH, 0.413 against 0.352, so its LSH recall depends on the MinHash draw; it is out of the report.
+
+**Deduplication, seed 1** (thresholds chosen on seed 0; ARI, connected components / Louvain at resolution 100):
+
+| Graph | Seed 0 | Seed 1 |
+| --- | --- | --- |
+| pHash, d <= 10 | 0.554 / 0.554 | 0.572 / 0.572 |
+| Visual words, J >= 0.2 | 0.813 / 0.840 | 0.848 / 0.852 |
+| Visual words, J >= 0.1 | 0.008 / 0.708 | 0.009 / 0.708 |
+| Verified, inliers >= 15 | 0.903 / 0.903 | 0.912 / 0.912 |
+
+At J >= 0.1 connected components put 1,538 images in one cluster.
+Modularity (always computed at resolution 1) prefers the wrong partition there: Louvain at resolution 1 scores 0.955 at ARI 0.062, at resolution 100 0.742 at ARI 0.708.
+Verified edges have pair precision 0.993, so Louvain has nothing to cut.
+
+**Notebook on DISC21.** `run disc21 --split val --queries 20` and the notebook with `DATASET = "disc21"` and `QUERY_LIMIT = 20` agree on all 16,640 per-query rows except the timing column, and on every recall and false-match rate.
+The notebook stored LSH item positions as int64 where the package uses int32, so it reported 3.4 MB more index memory for pHash and 22.6 MB more for visual words; it now matches.
+
 ## Open for the seats
 
 - Seat 1: pHash (b, r) beyond one tuned point, and the scale point at 100,000 references to see whether the LSH advantage over the scan grows.
