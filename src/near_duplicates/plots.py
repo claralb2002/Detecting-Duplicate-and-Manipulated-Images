@@ -16,12 +16,17 @@ from matplotlib.lines import Line2D
 
 from near_duplicates.lsh import bit_sampling_curve, s_curve
 from near_duplicates.phash import HASH_BITS
+from near_duplicates.transforms import CHAINS
 
+# The three system colours stay distinguishable under every colour-vision deficiency, which matplotlib's default
+# orange and green (C1, C2) do not: under protanopia they are 0.7 apart in OKLab, so visual words and RANSAC merge.
+PHASH_COLOR, VISUAL_WORDS_COLOR, RANSAC_COLOR = "#2a78d6", "#eb6834", "#1baf7a"
 STYLES = {
-    ("phash", "lsh"): ("C0", "-"), ("phash", "exhaustive"): ("C0", "--"),
-    ("visual-words", "lsh"): ("C1", "-"), ("visual-words", "exhaustive"): ("C1", "--"),
-    ("visual-words+ransac", "lsh"): ("C2", "-"), ("visual-words+ransac", "exhaustive"): ("C2", "--"),
+    ("phash", "lsh"): (PHASH_COLOR, "-"), ("phash", "exhaustive"): (PHASH_COLOR, "--"),
+    ("visual-words", "lsh"): (VISUAL_WORDS_COLOR, "-"), ("visual-words", "exhaustive"): (VISUAL_WORDS_COLOR, "--"),
+    ("visual-words+ransac", "lsh"): (RANSAC_COLOR, "-"), ("visual-words+ransac", "exhaustive"): (RANSAC_COLOR, "--"),
 }
+MARKERS = {"phash": "o", "visual-words": "s", "visual-words+ransac": "^"}
 UNGRADED = ("clean", "flip")
 LABELS = {"phash": "pHash", "visual-words": "visual words", "visual-words+ransac": "visual words + RANSAC"}
 
@@ -34,18 +39,34 @@ REPORT_STYLE = {
     "axes.spines.top": False, "axes.spines.right": False, "axes.grid": True, "grid.linewidth": 0.3, "grid.color": "0.88",
 }
 
-# Per edit: panel title with the unit of its strength, an offset that turns the strength into that unit, and whether
-# a lower value is the stronger edit. Those axes are reversed, so every panel gets harder to the right.
+# Per edit: its name, the unit of its strength, an offset that turns the strength into that unit, and whether a lower
+# value is the stronger edit. Those axes are reversed, so every panel gets harder to the right.
 EDIT_AXES = {
-    "jpeg": ("JPEG (quality)", 0, True),
-    "downscale": ("Downscale (side kept)", 0, True),
-    "crop": ("Crop (area kept)", 0, True),
-    "rotate": ("Rotation (degrees)", 0, False),
-    "blur": ("Blur (sigma in pixels)", 0, False),
-    "brightness": ("Brightness (gain)", 1, False),
-    "contrast": ("Contrast (share removed)", 0, False),
-    "overlay": ("Overlay (area covered)", 0, False),
+    "jpeg": ("JPEG", "quality", 0, True),
+    "downscale": ("Downscale", "side kept", 0, True),
+    "crop": ("Crop", "area kept", 0, True),
+    "rotate": ("Rotation", "degrees", 0, False),
+    "blur": ("Blur", "sigma in pixels", 0, False),
+    "brightness": ("Brightness", "gain", 1, False),
+    "contrast": ("Contrast", "share removed", 0, False),
+    "overlay": ("Overlay", "area covered", 0, False),
 }
+# Every level of this chain contains the single edit, so the single edit alone is drawn as the chain's level 0.
+CHAIN_BASES = {"flip+jpeg": "flip"}
+
+
+def chain_title(kind: str) -> str:
+    names = [EDIT_AXES[step][0] if step in EDIT_AXES else step.capitalize() for step in kind.split("+")]
+    return " + ".join([names[0], *(name if name.isupper() else name.lower() for name in names[1:])])
+
+
+def chain_ticks(kind: str) -> dict[int, str]:
+    """Each level labelled with its steps' strengths, one per line in title order and in the units of their single-edit
+    panels; flips have none."""
+    return {
+        level: "\n".join(f"{strength + EDIT_AXES[step][2]:g}" for step, strength in steps if step in EDIT_AXES)
+        for level, steps in enumerate(CHAINS[kind], start=1)
+    }
 
 
 def stacked_column_figure() -> tuple[plt.Figure, np.ndarray]:
@@ -64,17 +85,27 @@ def plot_recall(summary: pd.DataFrame, path: Path) -> None:
     kinds = [k for k in dict.fromkeys(summary.kind) if k not in UNGRADED]
     rows = -(-len(kinds) // 4)
     with plt.rc_context(REPORT_STYLE):
-        fig, axes = plt.subplots(rows, 4, figsize=(TEXT_WIDTH, 1.25 * rows + 0.3), sharey=True, squeeze=False, layout="constrained")
+        fig, axes = plt.subplots(rows, 4, figsize=(TEXT_WIDTH, 1.25 * rows + 0.55), sharey=True, squeeze=False, layout="constrained")
         for ax, kind in zip(axes.flat, kinds):
-            title, offset, lower_is_harder = EDIT_AXES.get(kind, (f"{kind.replace('+', ' + ').replace('jpeg', 'JPEG')} (level)", 0, False))
+            panel = summary[summary.kind == kind]
+            if kind in CHAINS:
+                title, offset, lower_is_harder, ticks = chain_title(kind), 0, False, chain_ticks(kind)
+                base = summary[summary.kind == CHAIN_BASES.get(kind)]
+                if len(base):
+                    panel = pd.concat([base.assign(strength=0), panel])
+                    ticks[0] = "none"
+            else:
+                name, unit, offset, lower_is_harder = EDIT_AXES[kind]
+                title, ticks = f"{name} ({unit})", None
             for (system, mode), (color, line) in STYLES.items():
-                part = summary[(summary.kind == kind) & (summary.system == system) & (summary["mode"] == mode)].sort_values("strength")
+                part = panel[(panel.system == system) & (panel["mode"] == mode)].sort_values("strength")
                 x = part.strength.astype(float) + offset
-                ax.plot(x, part.recall_at_1, color=color, linestyle=line, marker="o")
+                ax.plot(x, part.recall_at_1, color=color, linestyle=line, marker=MARKERS[system])
                 ax.fill_between(x, part.recall_at_1_low, part.recall_at_1_high, color=color, alpha=0.12, linewidth=0)
             ax.set(title=title, ylim=(0, 1.04), yticks=(0, 0.5, 1))
-            if kind not in EDIT_AXES:
-                ax.set_xticks(sorted(summary[summary.kind == kind].strength.unique()))
+            if ticks:
+                ax.set_xticks(list(ticks), list(ticks.values()))
+                ax.margins(x=0.1)
             if lower_is_harder:
                 ax.invert_xaxis()
         for ax in axes[:, 0]:
@@ -82,7 +113,7 @@ def plot_recall(summary: pd.DataFrame, path: Path) -> None:
         for ax in axes.flat[len(kinds) :]:
             ax.axis("off")
         systems = dict.fromkeys(system for system, _ in STYLES)
-        handles = [Line2D([], [], color=STYLES[system, "lsh"][0], label=LABELS[system]) for system in systems]
+        handles = [Line2D([], [], color=STYLES[system, "lsh"][0], marker=MARKERS[system], label=LABELS[system]) for system in systems]
         handles += [Line2D([], [], color="0.3", linestyle=line, label=label) for line, label in (("-", "LSH"), ("--", "exhaustive"))]
         fig.legend(handles=handles, loc="outside upper center", ncol=len(handles), frameon=False, handlelength=2.4, columnspacing=1.8)
         fig.savefig(path)
